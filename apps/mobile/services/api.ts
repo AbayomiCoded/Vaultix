@@ -176,7 +176,33 @@ export const notificationApi = {
     await api.post('/api/notifications/mark-as-read', { notificationId });
   },
 };
+export interface ServerDispute {
+  id: string;
+  escrowId: string;
+  reason: string;
+  status: string;
+  evidence?: string[] | null;
+  outcome?: string | null;
+  resolutionNotes?: string | null;
+  resolvedAt?: string | null;
+}
+
 export const disputeApi = {
+  /** File a dispute against an escrow; evidence holds CIDs from uploadEvidence */
+  file: async (
+    escrowId: string,
+    payload: { reason: string; evidence?: string[] },
+  ): Promise<ServerDispute> => {
+    const { data } = await api.post<ServerDispute>(`/api/escrows/${escrowId}/dispute`, payload);
+    return data;
+  },
+
+  /** Fetch the dispute for an escrow (404 when none exists) */
+  get: async (escrowId: string): Promise<ServerDispute | null> => {
+    const { data } = await api.get<ServerDispute | null>(`/api/escrows/${escrowId}/dispute`);
+    return data;
+  },
+
   /** #409 — upload evidence file for a dispute, returns CID and URL */
   uploadEvidence: async (
     escrowId: string,
@@ -188,7 +214,7 @@ export const disputeApi = {
     /* React Native's FormData accepts { uri, name, type } but TS types don't reflect it */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fileBlob = { uri: fileUri, name: fileName, type: mimeType } as any;
-    formData.append('file', fileBlob);
+    formData.append('files', fileBlob);
 
     const { data } = await api.post<{ cid: string; url: string }>(
       `/api/escrows/${escrowId}/evidence`,
