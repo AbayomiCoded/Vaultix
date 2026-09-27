@@ -177,7 +177,13 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Seed Management</Text>
           <View style={styles.card}>
             {!seedVisible ? (
-              <TouchableOpacity style={styles.primaryBtn} onPress={handleRevealSeed}>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={handleRevealSeed}
+                accessibilityRole="button"
+                accessibilityLabel="Reveal secret seed"
+                accessibilityHint="Asks for biometric authentication, then shows your wallet's secret seed"
+              >
                 <Text style={styles.primaryBtnText}>Reveal Secret Seed</Text>
               </TouchableOpacity>
             ) : (
@@ -189,7 +195,12 @@ export default function SettingsScreen() {
                   <Text style={styles.seedValue} selectable>{seedValue}</Text>
                 </View>
                 <CopyButton value={seedValue ?? ''} label="Copy Seed" toastMessage="Seed copied" />
-                <TouchableOpacity onPress={() => { setSeedVisible(false); setSeedValue(null); }} style={styles.secondaryBtn}>
+                <TouchableOpacity
+                  onPress={() => { setSeedVisible(false); setSeedValue(null); }}
+                  style={styles.secondaryBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Hide secret seed"
+                >
                   <Text style={styles.secondaryBtnText}>Hide Seed</Text>
                 </TouchableOpacity>
               </View>
@@ -206,15 +217,28 @@ export default function SettingsScreen() {
               placeholderTextColor="#64748B"
               autoCapitalize="none"
               secureTextEntry
+              accessibilityLabel="Stellar secret seed to import"
             />
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleImportWallet}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleImportWallet}
+              accessibilityRole="button"
+              accessibilityLabel="Import wallet"
+              accessibilityHint="Replaces your current wallet with the one from the entered secret seed"
+            >
               <Text style={styles.primaryBtnText}>Import</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.sectionTitle}>Danger Zone</Text>
           <View style={styles.card}>
-            <TouchableOpacity style={styles.dangerBtn} onPress={handleRemoveWallet}>
+            <TouchableOpacity
+              style={styles.dangerBtn}
+              onPress={handleRemoveWallet}
+              accessibilityRole="button"
+              accessibilityLabel="Remove wallet"
+              accessibilityHint="Permanently removes this wallet from the device after confirmation"
+            >
               <Text style={styles.dangerBtnText}>Remove Wallet</Text>
             </TouchableOpacity>
           </View>
@@ -237,7 +261,14 @@ export default function SettingsScreen() {
             value={isEnabled}
             onValueChange={handleToggle}
             disabled={!isSupported || !isEnrolled}
-            accessibilityLabel="Toggle biometric app lock"
+            accessibilityRole="switch"
+            accessibilityLabel="Biometric app lock"
+            accessibilityHint={
+              !isSupported || !isEnrolled
+                ? 'Unavailable. Set up Face ID, Touch ID or fingerprint on this device first'
+                : 'Requires Face ID, Touch ID or fingerprint when opening Vaultix'
+            }
+            accessibilityState={{ checked: isEnabled, disabled: !isSupported || !isEnrolled }}
             trackColor={{ false: '#334155', true: '#3B82F6' }}
             thumbColor={isEnabled ? '#ffffff' : '#94A3B8'}
           />

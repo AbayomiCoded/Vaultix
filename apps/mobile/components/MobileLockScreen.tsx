@@ -8,18 +8,30 @@ interface MobileLockScreenProps {
 
 export const MobileLockScreen: React.FC<MobileLockScreenProps> = ({ onUnlock, onDisableFallback }) => {
   return (
-    <View style={styles.container}>
-      <View style={styles.iconContainer}>
+    <View style={styles.container} accessibilityViewIsModal>
+      <View style={styles.iconContainer} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
         <Text style={styles.icon}>🔒</Text>
       </View>
-      <Text style={styles.title}>App Locked</Text>
+      <Text style={styles.title} accessibilityRole="header">App Locked</Text>
       <Text style={styles.subtitle}>Unlock to access your secure Vaultix session.</Text>
 
-      <TouchableOpacity style={styles.unlockButton} onPress={onUnlock}>
+      <TouchableOpacity
+        style={styles.unlockButton}
+        onPress={onUnlock}
+        accessibilityRole="button"
+        accessibilityLabel="Unlock with biometrics"
+        accessibilityHint="Opens the Face ID, Touch ID or fingerprint prompt to unlock Vaultix"
+      >
         <Text style={styles.unlockButtonText}>Unlock with Biometrics</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.fallbackButton} onPress={onDisableFallback}>
+      <TouchableOpacity
+        style={styles.fallbackButton}
+        onPress={onDisableFallback}
+        accessibilityRole="button"
+        accessibilityLabel="Disable biometric lock"
+        accessibilityHint="Turns off the biometric app lock so Vaultix opens without it"
+      >
         <Text style={styles.fallbackButtonText}>Disable Biometric Lock</Text>
       </TouchableOpacity>
     </View>

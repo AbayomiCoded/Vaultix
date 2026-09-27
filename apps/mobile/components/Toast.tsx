@@ -3,7 +3,15 @@
  * Auto-dismisses after `durationMs`. Uses the app's dark theme palette.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Animated,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 export interface ToastConfig {
   message: string;
@@ -35,6 +43,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   _showToast = useCallback((config: ToastConfig) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setToast({ ...config, visible: true });
+    // iOS has no live regions, so announce explicitly. Android is covered by
+    // `accessibilityLiveRegion` below — announcing there too would double-speak.
+    if (Platform.OS === 'ios') {
+      AccessibilityInfo.announceForAccessibility(config.message);
+    }
     Animated.sequence([
       Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
@@ -62,13 +75,27 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {children}
       {toast?.visible && (
-        <Animated.View style={[styles.wrapper, { opacity }]} pointerEvents="box-none">
+        <Animated.View
+          style={[styles.wrapper, { opacity }]}
+          pointerEvents="box-none"
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+        >
           <TouchableOpacity
             style={[styles.toast, { backgroundColor: colors.bg }]}
             onPress={dismiss}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={toast.message}
+            accessibilityHint="Dismisses this message"
           >
-            <Text style={[styles.icon, { color: colors.text }]}>{colors.icon}</Text>
+            <Text
+              style={[styles.icon, { color: colors.text }]}
+              importantForAccessibility="no"
+              accessibilityElementsHidden
+            >
+              {colors.icon}
+            </Text>
             <Text style={[styles.message, { color: colors.text }]}>{toast.message}</Text>
           </TouchableOpacity>
         </Animated.View>
