@@ -11,6 +11,8 @@ import { useBiometricLock } from '../../hooks/useBiometricLock';
 import { useSession } from '../../hooks/useSession';
 import { CopyButton } from '../../components/CopyButton';
 import { revealWalletSeed, importWalletFromSeed, removeWallet } from '../../services/wallet';
+import { clearSession } from '../../services/session';
+import { resetSessionExpiryGate } from '../../services/api';
 
 function truncateAddress(address: string): string {
   if (address.length <= 14) return address;
@@ -75,6 +77,25 @@ export default function SettingsScreen() {
     } catch {
       Alert.alert('Error', 'Could not reveal seed. No wallet found.');
     }
+  };
+
+  const handleDisconnectWallet = () => {
+    Alert.alert(
+      'Disconnect Wallet',
+      'This signs you out and clears the stored session token. You will need to reconnect your wallet.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            await clearSession();
+            resetSessionExpiryGate();
+            router.replace('/');
+          },
+        },
+      ],
+    );
   };
 
   const handleImportWallet = () => {
@@ -243,7 +264,25 @@ export default function SettingsScreen() {
           />
         </View>
       </View>
-    </ScrollView>
+    
+      <View style={{ padding: 16, gap: 12 }}>
+        <TouchableOpacity
+          onPress={handleDisconnectWallet}
+          style={{
+            backgroundColor: '#DC2626',
+            paddingVertical: 14,
+            borderRadius: 8,
+            alignItems: 'center',
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Disconnect Wallet"
+        >
+          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>
+            Disconnect Wallet
+          </Text>
+        </TouchableOpacity>
+      </View>
+</ScrollView>
   );
 }
 

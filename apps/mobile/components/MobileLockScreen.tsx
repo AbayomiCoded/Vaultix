@@ -1,27 +1,62 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import type { BiometricAvailability } from '../hooks/useBiometricLock';
 
 interface MobileLockScreenProps {
   onUnlock: () => void;
   onDisableFallback: () => void;
+  /** When biometrics hardware/enrollment is gone while lock is on (#721). */
+  biometricsUnavailable?: boolean;
+  availability?: BiometricAvailability;
 }
 
-export const MobileLockScreen: React.FC<MobileLockScreenProps> = ({ onUnlock, onDisableFallback }) => {
+export const MobileLockScreen: React.FC<MobileLockScreenProps> = ({
+  onUnlock,
+  onDisableFallback,
+  biometricsUnavailable = false,
+  availability = 'unknown',
+}) => {
+  const unavailableMessage =
+    availability === 'no_hardware'
+      ? 'Biometric hardware is unavailable on this device.'
+      : availability === 'not_enrolled'
+        ? 'No biometrics are enrolled. Add a fingerprint or face in system settings, or recover below.'
+        : 'Biometric unlock is currently unavailable.';
+
   return (
     <View style={styles.container}>
       <View style={styles.iconContainer}>
         <Text style={styles.icon}>🔒</Text>
       </View>
       <Text style={styles.title}>App Locked</Text>
-      <Text style={styles.subtitle}>Unlock to access your secure Vaultix session.</Text>
+      <Text style={styles.subtitle}>
+        {biometricsUnavailable
+          ? unavailableMessage
+          : 'Unlock to access your secure Vaultix session.'}
+      </Text>
 
-      <TouchableOpacity style={styles.unlockButton} onPress={onUnlock}>
-        <Text style={styles.unlockButtonText}>Unlock with Biometrics</Text>
-      </TouchableOpacity>
+      {!biometricsUnavailable && (
+        <TouchableOpacity style={styles.unlockButton} onPress={onUnlock}>
+          <Text style={styles.unlockButtonText}>Unlock with Biometrics</Text>
+        </TouchableOpacity>
+      )}
 
-      <TouchableOpacity style={styles.fallbackButton} onPress={onDisableFallback}>
-        <Text style={styles.fallbackButtonText}>Disable Biometric Lock</Text>
-      </TouchableOpacity>
+      {biometricsUnavailable ? (
+        <>
+          <Text style={styles.recoveryHint}>
+            You can disable biometric lock using your device passcode, or force
+            recovery if the sensor cannot be used. This does not delete your
+            wallet — only turns off the lock screen.
+          </Text>
+          <TouchableOpacity style={styles.unlockButton} onPress={onDisableFallback}>
+            <Text style={styles.unlockButtonText}>Recover — Disable Lock</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <TouchableOpacity style={styles.fallbackButton} onPress={onDisableFallback}>
+          <Text style={styles.fallbackButtonText}>Disable Biometric Lock</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -31,7 +66,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0F172A', // dark theme background
+    backgroundColor: '#0F172A',
     padding: 24,
   },
   iconContainer: {
@@ -50,7 +85,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#94A3B8',
     textAlign: 'center',
-    marginBottom: 48,
+    marginBottom: 24,
+  },
+  recoveryHint: {
+    fontSize: 14,
+    color: '#CBD5E1',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
   },
   unlockButton: {
     backgroundColor: '#3B82F6',

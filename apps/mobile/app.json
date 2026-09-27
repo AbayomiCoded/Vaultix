@@ -9,13 +9,43 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "io.vaultix.mobile"
+      "bundleIdentifier": "io.vaultix.mobile",
+      "associatedDomains": ["applinks:vaultix.app", "applinks:www.vaultix.app"]
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
-      "package": "io.vaultix.mobile"
+      "package": "io.vaultix.mobile",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "vaultix.app",
+              "pathPrefix": "/escrow"
+            },
+            {
+              "scheme": "https",
+              "host": "vaultix.app",
+              "pathPrefix": "/invite"
+            },
+            {
+              "scheme": "https",
+              "host": "www.vaultix.app",
+              "pathPrefix": "/escrow"
+            },
+            {
+              "scheme": "https",
+              "host": "www.vaultix.app",
+              "pathPrefix": "/invite"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "plugins": [
       "expo-router",
@@ -30,6 +60,11 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://vaultix.app"
+      }
     }
   }
 }

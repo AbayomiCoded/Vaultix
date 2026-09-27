@@ -3,6 +3,8 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastProvider } from '../components/Toast';
 import { hydrateSession } from '../services/session';
+import { setSessionExpiredHandler } from '../services/api';
+import { useRouter } from 'expo-router';
 import { validateEnv } from '../security/env';
 
 import { AppState, AppStateStatus } from 'react-native';
@@ -13,7 +15,17 @@ import { UpdatePromptModal } from '../components/UpdatePromptModal';
 import { useEffect, useRef, useState } from 'react';
 
 export default function RootLayout() {
-  const { isEnabled, isUnlocked, authenticate, lock, disableBiometric } = useBiometricLock();
+  const {
+    isEnabled,
+    isUnlocked,
+    authenticate,
+    lock,
+    disableBiometric,
+    forceDisableBiometric,
+    biometricsUnavailableWhileLocked,
+    availability,
+  } = useBiometricLock();
+  const router = useRouter();
   const { needsUpdate, forceUpdate, latestVersion, updateUrl, isLoading } = useAppVersion();
   const appState = useRef(AppState.currentState);
   const [updateDismissed, setUpdateDismissed] = useState(false);
@@ -22,6 +34,14 @@ export default function RootLayout() {
     validateEnv();
     hydrateSession();
   }, []);
+
+  // #719 — on 401, clear token (interceptor) and return to welcome once.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      router.replace('/');
+    });
+    return () => setSessionExpiredHandler(null);
+  }, [router]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
@@ -66,7 +86,18 @@ export default function RootLayout() {
         {!showForceUpdate && !isUnlocked && (
           <MobileLockScreen
             onUnlock={authenticate}
-            onDisableFallback={disableBiometric}
+            onDisableFallback={async () => {
+              if (biometricsUnavailableWhileLocked) {
+                await forceDisableBiometric({ preferDevicePasscode: false });
+              } else {
+                const ok = await disableBiometric();
+                if (!ok) {
+                  await forceDisableBiometric();
+                }
+              }
+            }}
+            biometricsUnavailable={biometricsUnavailableWhileLocked}
+            availability={availability}
           />
         )}
 

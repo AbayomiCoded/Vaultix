@@ -93,7 +93,6 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
 
       setUploadedFiles([...uploadedFiles, ...newFiles]);
 
-      // Simulate upload (replace with actual upload logic)
       newFiles.filter(f => !f.error).forEach(file => {
         uploadFile(file);
       });
@@ -109,6 +108,13 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
         file.uri,
         file.name,
         file.type,
+        (percent) => {
+          setUploadedFiles(prev =>
+            prev.map(f =>
+              f.id === file.id ? { ...f, progress: percent, error: undefined } : f,
+            ),
+          );
+        },
       );
       setUploadedFiles(prev =>
         prev.map(f =>
