@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +18,7 @@ import { Escrow, Milestone, Party, EscrowEvent } from '../../types/escrow';
 import { OfflineBanner } from '../../components/OfflineBanner';
 import { CopyButton } from '../../components/CopyButton';
 import { ShareButton, buildEscrowShareUrl } from '../../components/ShareButton';
+import { EscrowQRCode } from '../../components/EscrowQRCode';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { toFriendlyError, isOfflineError } from '../../utils/errors';
 import { useDisputes } from '../../hooks/useDisputes';
@@ -125,6 +127,7 @@ export default function EscrowDetailScreen() {
   const [error, setError] = useState<{ title: string; message: string } | null>(null);
   const { isOffline, markOffline, markOnline } = useNetworkStatus();
   const [isDisputeModalVisible, setDisputeModalVisible] = useState(false);
+  const [isQrVisible, setQrVisible] = useState(false);
   const { dispute, raiseDispute, hasActiveDispute, isSubmitting } = useDisputes(id);
 
   const load = useCallback(async () => {
@@ -193,7 +196,37 @@ export default function EscrowDetailScreen() {
       <View style={styles.shareRow}>
         <CopyButton value={escrow.id} label="Copy Escrow ID" toastMessage="Escrow ID copied!" variant="ghost" />
         <ShareButton url={buildEscrowShareUrl(escrow.id)} label="Share Escrow" variant="primary" />
+        <TouchableOpacity
+          style={styles.qrButton}
+          onPress={() => setQrVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Show escrow QR code"
+        >
+          <Text style={styles.qrButtonText}>QR</Text>
+        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={isQrVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setQrVisible(false)}
+      >
+        <View style={styles.qrBackdrop}>
+          <View style={styles.qrCard}>
+            <Text style={styles.qrTitle}>Share Escrow QR</Text>
+            <EscrowQRCode escrowId={escrow.id} />
+            <TouchableOpacity
+              style={styles.qrCloseButton}
+              onPress={() => setQrVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close escrow QR code"
+            >
+              <Text style={styles.qrCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.metaRow}>
         <View style={styles.metaItem}>
@@ -330,6 +363,51 @@ const styles = StyleSheet.create({
   errorMessage: { color: '#aaa', fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16 },
   retryBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
   retryText: { color: '#fff', fontWeight: '600' },
+  qrButton: {
+    alignItems: 'center',
+    backgroundColor: '#2d2d44',
+    borderRadius: 8,
+    justifyContent: 'center',
+    minWidth: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  qrButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  qrBackdrop: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  qrCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+  },
+  qrTitle: {
+    color: '#111',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  qrCloseButton: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    marginTop: 16,
+    paddingVertical: 12,
+  },
+  qrCloseText: {
+    color: '#fff',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   shareRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   actionBtn: { borderRadius: 10, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
