@@ -33,10 +33,10 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
   const [description, setDescription] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
 
-  const handleSumbit = () => {
+  const handleSumbit = async () => {
     if (reason && description) {
       const evidenceCids = uploadedFiles.filter(f => f.cid).map(f => f.cid!);
-      onSubmit(reason, description, evidenceCids.length > 0 ? evidenceCids : undefined);
+      await onSubmit(reason, description, evidenceCids.length > 0 ? evidenceCids : undefined);
     }
   };
 

@@ -3,6 +3,7 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -124,7 +125,7 @@ export default function EscrowDetailScreen() {
   const [error, setError] = useState<{ title: string; message: string } | null>(null);
   const { isOffline, markOffline, markOnline } = useNetworkStatus();
   const [isDisputeModalVisible, setDisputeModalVisible] = useState(false);
-  const { dispute, raiseDispute, hasActiveDispute, isSubmitting } = useDisputes();
+  const { dispute, raiseDispute, hasActiveDispute, isSubmitting } = useDisputes(id);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -264,10 +265,14 @@ export default function EscrowDetailScreen() {
       <RaiseDisputeModal
         visible={isDisputeModalVisible}
         onClose={() => setDisputeModalVisible(false)}
-        onSubmit={async (reason, description) => {
-          const res = await raiseDispute(escrow.id, reason, description);
+        onSubmit={async (reason, description, evidence) => {
+          const res = await raiseDispute(escrow.id, reason, description, evidence);
           if (res.success) {
             setDisputeModalVisible(false);
+            load();
+          } else {
+            // Keep the modal open so the user can retry
+            Alert.alert(res.error.title, res.error.message);
           }
         }}
         isSubmitting={isSubmitting}
