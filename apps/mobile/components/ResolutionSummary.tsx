@@ -1,10 +1,17 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { DisputeDetails } from '../hooks/useDisputes';
+import { DisputeDetails, DisputeResolution } from '../hooks/useDisputes';
 
 interface ResolutionSummaryProps {
   dispute: DisputeDetails;
 }
+
+/** Display labels for the on-chain `Resolution` vocabulary. */
+const RESOLUTION_LABELS: Record<DisputeResolution, string> = {
+  depositor: 'Depositor',
+  recipient: 'Recipient',
+  split: 'Split',
+};
 
 export const ResolutionSummary: React.FC<ResolutionSummaryProps> = ({ dispute }) => {
   if (dispute.status !== 'RESOLVED' && dispute.status !== 'REJECTED') {
@@ -22,16 +29,16 @@ export const ResolutionSummary: React.FC<ResolutionSummaryProps> = ({ dispute })
 
       {dispute.status === 'RESOLVED' && dispute.winner && (
         <View style={styles.row}>
-          <Text style={styles.label}>Winner:</Text>
-          <Text style={styles.value}>{dispute.winner}</Text>
+          <Text style={styles.label}>Resolved in favour of:</Text>
+          <Text style={styles.value}>{RESOLUTION_LABELS[dispute.winner]}</Text>
         </View>
       )}
 
       {dispute.status === 'RESOLVED' && dispute.finalPayouts && (
         <View style={styles.payouts}>
           <Text style={styles.label}>Final Payouts:</Text>
-          <Text style={styles.payoutText}>Buyer: ${dispute.finalPayouts.buyerAmount}</Text>
-          <Text style={styles.payoutText}>Seller: ${dispute.finalPayouts.sellerAmount}</Text>
+          <Text style={styles.payoutText}>Depositor: ${dispute.finalPayouts.depositorAmount}</Text>
+          <Text style={styles.payoutText}>Recipient: ${dispute.finalPayouts.recipientAmount}</Text>
         </View>
       )}
 
