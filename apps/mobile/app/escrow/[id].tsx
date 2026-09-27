@@ -15,6 +15,9 @@ import { escrowApi } from '../../services/api';
 import { requireAuth } from '../../services/auth';
 import { Escrow, Milestone, Party, EscrowEvent } from '../../types/escrow';
 import { OfflineBanner } from '../../components/OfflineBanner';
+import StaleDataBadge from '../../components/StaleDataBadge';
+import CacheTimestamp from '../../components/CacheTimestamp';
+import { cacheEscrowDetail, getCachedEscrowDetail } from '../../services/cache/escrowCache';
 import { CopyButton } from '../../components/CopyButton';
 import { ShareButton, buildEscrowShareUrl } from '../../components/ShareButton';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
@@ -126,6 +129,8 @@ export default function EscrowDetailScreen() {
   const { isOffline, markOffline, markOnline } = useNetworkStatus();
   const [isDisputeModalVisible, setDisputeModalVisible] = useState(false);
   const { dispute, raiseDispute, hasActiveDispute, isSubmitting } = useDisputes(id);
+  const [isStale, setIsStale] = useState(false);
+  const [cacheUpdatedAt, setCacheUpdatedAt] = useState<number>();
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -133,9 +138,30 @@ export default function EscrowDetailScreen() {
       setError(null);
       const data = await escrowApi.getById(id);
       setEscrow(data);
+      // Surface the cache staleness the offline layer already tracks (#697).
+      // A cache write failure must never turn a successful load into an error.
+      try {
+        await cacheEscrowDetail(id, data);
+        setIsStale(false);
+        setCacheUpdatedAt(Date.now());
+      } catch {
+        // Keep the freshly fetched data on screen; caching is best-effort.
+      }
       markOnline();
     } catch (err) {
       const friendly = toFriendlyError(err);
+      if (isOfflineError(err)) {
+        // Offline: fall back to the cached copy when we have one, and flag it
+        // as stale rather than showing a dead-end error screen.
+        const cached = await getCachedEscrowDetail(id).catch(() => null);
+        if (cached?.data) {
+          setEscrow(cached.data as Escrow);
+          setIsStale(cached.stale);
+          setCacheUpdatedAt(cached.updatedAt);
+          markOffline();
+          return;
+        }
+      }
       setError({ title: friendly.title, message: friendly.message });
       if (isOfflineError(err)) markOffline();
     } finally {
@@ -188,6 +214,8 @@ export default function EscrowDetailScreen() {
           <Text style={[styles.statusText, { color: statusColor }]}>{escrow.status.toUpperCase()}</Text>
         </View>
       </View>
+      <StaleDataBadge stale={isStale} />
+      <CacheTimestamp timestamp={cacheUpdatedAt} />
       <Text style={styles.description}>{escrow.description}</Text>
 
       <View style={styles.shareRow}>
