@@ -14,7 +14,11 @@ export const useBiometricLock = () => {
   const [isSupported, setIsSupported] = useState(false);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [isEnabled, setIsEnabled] = useState(false);
-  const [isUnlocked, setIsUnlocked] = useState(true);
+  // Locked until proven otherwise: the SecureStore preference read resolves
+  // after first paint, so defaulting to `true` rendered real content before
+  // the lock screen could ever appear.
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [availability, setAvailability] =
     useState<BiometricAvailability>('unknown');
 
@@ -34,12 +38,24 @@ export const useBiometricLock = () => {
     if (preference === 'true') {
       setIsEnabled(true);
       setIsUnlocked(false);
+    } else {
+      // No lock configured — proceed straight into the app.
+      setIsEnabled(false);
+      setIsUnlocked(true);
     }
   }, []);
 
   useEffect(() => {
-    void refreshAvailability();
-    void loadBiometricPreference();
+    let cancelled = false;
+    const init = async () => {
+      await refreshAvailability();
+      await loadBiometricPreference();
+      if (!cancelled) setIsInitializing(false);
+    };
+    void init();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshAvailability, loadBiometricPreference]);
 
   const enableBiometric = async () => {
@@ -156,6 +172,7 @@ export const useBiometricLock = () => {
     isEnrolled,
     isEnabled,
     isUnlocked,
+    isInitializing,
     availability,
     biometricsUnavailableWhileLocked,
     enableBiometric,

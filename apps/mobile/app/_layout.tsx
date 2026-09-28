@@ -18,6 +18,7 @@ export default function RootLayout() {
   const {
     isEnabled,
     isUnlocked,
+    isInitializing,
     authenticate,
     lock,
     disableBiometric,
@@ -70,6 +71,13 @@ export default function RootLayout() {
   const showSoftUpdate =
     !isLoading && needsUpdate && !forceUpdate && isUnlocked && !updateDismissed;
 
+  // The real <Stack> must not mount until the biometric preference check
+  // resolves AND the user has unlocked. While `isInitializing` is true the
+  // SecureStore read is still pending, so isUnlocked is false and the lock
+  // screen renders instead — no real screen content is mounted and no
+  // screen effects (data fetching, polling timers) fire behind the gate.
+  const contentReady = !showForceUpdate && !isInitializing && isUnlocked;
+
   return (
     <SafeAreaProvider>
       <ToastProvider>
@@ -111,25 +119,27 @@ export default function RootLayout() {
         />
 
         <StatusBar style="auto" />
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: '#1a1a2e' },
-            headerTintColor: '#fff',
-            headerTitleStyle: { fontWeight: 'bold' },
-          }}
-        >
-          {/* Welcome / Connect Wallet */}
-          <Stack.Screen name="index" options={{ headerShown: false }} />
+        {contentReady && (
+          <Stack
+            screenOptions={{
+              headerStyle: { backgroundColor: '#1a1a2e' },
+              headerTintColor: '#fff',
+              headerTitleStyle: { fontWeight: 'bold' },
+            }}
+          >
+            {/* Welcome / Connect Wallet */}
+            <Stack.Screen name="index" options={{ headerShown: false }} />
 
-          {/* Tab screens (dashboard + notifications + settings) – rendered via (tabs)/_layout */}
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            {/* Tab screens (dashboard + notifications + settings) – rendered via (tabs)/_layout */}
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 
-          {/* Full-screen detail screens */}
-          <Stack.Screen name="escrow/[id]" options={{ title: 'Escrow Detail' }} />
-          <Stack.Screen name="invite/[token]" options={{ title: 'Accept Invitation' }} />
-          <Stack.Screen name="escrow/create" options={{ title: 'Create Escrow' }} />
-          <Stack.Screen name="escrow/release" options={{ title: 'Release Milestone' }} />
-        </Stack>
+            {/* Full-screen detail screens */}
+            <Stack.Screen name="escrow/[id]" options={{ title: 'Escrow Detail' }} />
+            <Stack.Screen name="invite/[token]" options={{ title: 'Accept Invitation' }} />
+            <Stack.Screen name="escrow/create" options={{ title: 'Create Escrow' }} />
+            <Stack.Screen name="escrow/release" options={{ title: 'Release Milestone' }} />
+          </Stack>
+        )}
       </ToastProvider>
     </SafeAreaProvider>
   );
