@@ -22,21 +22,23 @@ import { toFriendlyError, isOfflineError } from '../../utils/errors';
 const STATUS_FILTERS: Array<{ label: string; value: EscrowStatus | 'all' }> = [
   { label: 'All', value: 'all' },
   { label: 'Created', value: 'created' },
-  { label: 'Funded', value: 'funded' },
-  { label: 'Active', value: 'confirmed' },
+  { label: 'Active', value: 'active' },   // contract Active — backend serialises as 'active'
   { label: 'Completed', value: 'completed' },
   { label: 'Disputed', value: 'disputed' },
+  { label: 'Resolved', value: 'resolved' }, // contract Resolved terminal state
   { label: 'Expired', value: 'expired' },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
   created: '#6c63ff',
-  funded: '#00b4d8',
-  confirmed: '#06d6a0',
+  funded: '#00b4d8',    // mobile alias for contract Active
+  active: '#00b4d8',    // canonical backend value for contract Active
+  confirmed: '#06d6a0', // client-only transient alias
   released: '#06d6a0',
   completed: '#06d6a0',
   cancelled: '#aaa',
   disputed: '#ef476f',
+  resolved: '#a78bfa',  // contract Resolved terminal state
   expired: '#f77f00',
 };
 

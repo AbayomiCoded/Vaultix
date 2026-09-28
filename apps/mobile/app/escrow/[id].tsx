@@ -30,9 +30,16 @@ import { ResolutionSummary } from '../../components/ResolutionSummary';
 const CURRENT_USER_ROLE: 'depositor' | 'recipient' | 'arbitrator' = 'depositor';
 
 const STATUS_COLOR: Record<string, string> = {
-  created: '#6c63ff', funded: '#00b4d8', confirmed: '#06d6a0',
-  released: '#06d6a0', completed: '#06d6a0', cancelled: '#aaa',
-  disputed: '#ef476f', expired: '#f77f00',
+  created: '#6c63ff',
+  funded: '#00b4d8',    // mobile alias for contract Active
+  active: '#00b4d8',    // canonical backend value for contract Active
+  confirmed: '#06d6a0', // client-only transient alias
+  released: '#06d6a0',
+  completed: '#06d6a0',
+  cancelled: '#aaa',
+  disputed: '#ef476f',
+  resolved: '#a78bfa',  // contract Resolved terminal state
+  expired: '#f77f00',
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -50,6 +57,10 @@ function MilestoneRow({ milestone, canRelease, onRelease }: {
   onRelease: (id: string) => void;
 }) {
   const released = milestone.status === 'released';
+  // contract MilestoneStatus::Disputed — milestone is frozen under dispute; not releasable
+  const disputed = milestone.status === 'disputed';
+  // canRelease must explicitly exclude disputed milestones
+  const releasable = canRelease && !disputed;
   return (
     <View style={styles.milestoneRow}>
       <View style={styles.milestoneInfo}>
@@ -58,7 +69,12 @@ function MilestoneRow({ milestone, canRelease, onRelease }: {
       </View>
       {released ? (
         <View style={styles.releasedBadge}><Text style={styles.releasedText}>Released</Text></View>
-      ) : canRelease ? (
+      ) : disputed ? (
+        // Disputed milestone: clearly distinct from Pending — not releasable
+        <View style={styles.disputedMilestoneBadge}>
+          <Text style={styles.disputedMilestoneText}>Disputed</Text>
+        </View>
+      ) : releasable ? (
         <TouchableOpacity
           style={styles.releaseBtn}
           onPress={() => onRelease(milestone.id)}
@@ -199,9 +215,13 @@ export default function EscrowDetailScreen() {
   }
 
   const statusColor = STATUS_COLOR[escrow.status] || '#aaa';
+  // The contract reports `Active` which the backend serialises as `'active'`.
+  // Legacy mobile aliases `'funded'` and `'confirmed'` are also accepted for
+  // backwards-compatibility (see types/escrow.ts STATUS_MAPPING comment).
+  const isActiveEscrow = ['active', 'funded', 'confirmed'].includes(escrow.status);
   const canReleaseMilestones =
     CURRENT_USER_ROLE === 'depositor' &&
-    ['funded', 'confirmed'].includes(escrow.status) &&
+    isActiveEscrow &&
     !hasActiveDispute;
 
   return (
@@ -277,7 +297,8 @@ export default function EscrowDetailScreen() {
             <Text style={styles.actionBtnText}>Fund Escrow</Text>
           </TouchableOpacity>
         )}
-        {['funded', 'confirmed'].includes(escrow.status) && CURRENT_USER_ROLE === 'depositor' && !hasActiveDispute && (
+        {/* Raise dispute available when escrow is in any active variant and user is depositor */}
+        {isActiveEscrow && CURRENT_USER_ROLE === 'depositor' && !hasActiveDispute && (
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: '#ef476f22', borderWidth: 1, borderColor: '#ef476f' }]}
             onPress={() => setDisputeModalVisible(true)}
@@ -285,7 +306,13 @@ export default function EscrowDetailScreen() {
             <Text style={[styles.actionBtnText, { color: '#ef476f' }]}>Raise Dispute</Text>
           </TouchableOpacity>
         )}
-        {!['disputed', 'created', 'funded', 'confirmed'].includes(escrow.status) && (
+        {/* resolved is a terminal state: show the resolution summary instead of generic "no actions" */}
+        {escrow.status === 'resolved' && (
+          <Text style={[styles.noActions, { color: '#a78bfa' }]}>
+            This escrow has been resolved. See the Dispute Information section above.
+          </Text>
+        )}
+        {!['disputed', 'created', 'active', 'funded', 'confirmed', 'resolved'].includes(escrow.status) && (
           <Text style={styles.noActions}>No actions available for this status.</Text>
         )}
       </Section>
@@ -337,6 +364,8 @@ const styles = StyleSheet.create({
   releaseBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
   pendingBadge: { backgroundColor: '#2d2d44', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
   pendingText: { color: '#aaa', fontSize: 12 },
+  disputedMilestoneBadge: { backgroundColor: '#ef476f22', borderRadius: 6, borderWidth: 1, borderColor: '#ef476f', paddingHorizontal: 8, paddingVertical: 4 },
+  disputedMilestoneText: { color: '#ef476f', fontSize: 12, fontWeight: '600' },
   partyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },
   partyInfo: { flex: 1, marginRight: 8 },
   partyRole: { color: '#6c63ff', fontWeight: '700', fontSize: 12 },
