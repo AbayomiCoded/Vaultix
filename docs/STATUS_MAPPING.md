@@ -76,25 +76,44 @@ Disputed ──► Disputed             (remains disputed until resolution)
 
 ---
 
+## Known client-representation gaps
+
+These are the cases where a client could not represent a contract state. Each is
+tracked as a numbered issue and the current status is recorded so readers can see
+whether a client is safe to trust today.
+
+| Gap | Contract state the client could not represent | Affected client | Tracking issue | Current status |
+|---|---|---|---|---|
+| Escrow-status action gating checks statuses the contract never produces (`funded`/`confirmed`/`released`) while omitting `Active`/`Resolved`, so dispute/milestone actions never fire | `EscrowStatus::Active`, `EscrowStatus::Resolved` | Mobile | [#714](https://github.com/StayLitCodes/Vaultix/issues/714) | **Resolved in code** — `EscrowStatus` in [`apps/mobile/types/escrow.ts`](../apps/mobile/types/escrow.ts) now accepts `'active'` and `'resolved'` (added by [#558](https://github.com/StayLitCodes/Vaultix/issues/558)); the mapping below is the reference that keeps it aligned |
+| Milestone `Disputed` state absent from the mobile milestone type, so a frozen milestone rendered as `'pending'` | `MilestoneStatus::Disputed` | Mobile | [#698](https://github.com/StayLitCodes/Vaultix/issues/698) | **Resolved in code** — `MilestoneStatus` in [`apps/mobile/types/escrow.ts`](../apps/mobile/types/escrow.ts) now includes `'disputed'` (added by [#558](https://github.com/StayLitCodes/Vaultix/issues/558)) |
+
+> These gaps are **resolved in the mobile type definitions**, but they are listed
+> here (rather than silently dropped) because the underlying issues [#714](https://github.com/StayLitCodes/Vaultix/issues/714)
+> and [#698](https://github.com/StayLitCodes/Vaultix/issues/698) track the full
+> client behaviour, and this table is the single reference that keeps every client
+> from reintroducing the same divergence.
+
+---
+
 ## Resolved Gaps
 
-All three gaps previously listed here were closed in [`apps/mobile/types/escrow.ts`](../apps/mobile/types/escrow.ts) by [#558](https://github.com/StayLitCodes/Vaultix/issues/558). They are kept as a changelog so the reasons behind the mobile type definitions are not lost.
+All three gaps previously listed here were closed in [`apps/mobile/types/escrow.ts`](../apps/mobile/types/escrow.ts) by [#558](https://github.com/StayLitCodes/Vaultix/issues/558). They are kept as a changelog so the reasons behind the mobile type definitions are not lost. See [Known client-representation gaps](#known-client-representation-gaps) above for the issues ([#714](https://github.com/StayLitCodes/Vaultix/issues/714), [#698](https://github.com/StayLitCodes/Vaultix/issues/698)) that track them.
 
-### Resolved Gap #1 — `resolved` state not in mobile ✅
+### Resolved Gap #1 — `resolved` state not in mobile ✅ (tracked by [#714](https://github.com/StayLitCodes/Vaultix/issues/714))
 
 - **Contract state:** `EscrowStatus::Resolved`
 - **Backend DB value:** `resolved`
 - **Status:** `EscrowStatus` in `apps/mobile/types/escrow.ts` now includes `'resolved'`, and `escrowStatusLabel()` maps it to "Resolved". `isTerminalEscrowStatus()` treats it as terminal, matching the transition graph below.
 - **Original symptom:** A resolved escrow rendered as `undefined`/unknown in mobile status badges, filters, and the dashboard chip.
 
-### Resolved Gap #2 — disputed milestone state not in mobile ✅
+### Resolved Gap #2 — disputed milestone state not in mobile ✅ (tracked by [#698](https://github.com/StayLitCodes/Vaultix/issues/698))
 
 - **Contract state:** `MilestoneStatus::Disputed`
 - **Backend DB value:** `disputed`
 - **Status:** `MilestoneStatus` in `apps/mobile/types/escrow.ts` now includes `'disputed'`, and `milestoneStatusLabel()` maps it to "Disputed".
 - **Original symptom:** A milestone frozen in a dispute rendered as `'pending'` in the mobile UI, giving no indication that it is blocked.
 
-### Resolved Gap #3 — `active` not in mobile ✅
+### Resolved Gap #3 — `active` not in mobile ✅ (tracked by [#714](https://github.com/StayLitCodes/Vaultix/issues/714))
 
 - **Contract state:** `EscrowStatus::Active`
 - **Status:** `EscrowStatus` in `apps/mobile/types/escrow.ts` accepts both `'active'` (canonical) and `'funded'` (display alias); `escrowStatusLabel()` returns "In Progress" for both.
