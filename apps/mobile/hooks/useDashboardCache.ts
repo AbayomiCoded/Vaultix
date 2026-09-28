@@ -26,12 +26,16 @@ export function useDashboardCache(
   const [stale, setStale] =
     useState(false);
 
+  const [error, setError] =
+    useState<Error | null>(null);
+
   useEffect(() => {
     load();
   }, []);
 
   async function load() {
     setLoading(true);
+    setError(null);
 
     const online = await isOnline();
 
@@ -55,22 +59,46 @@ export function useDashboardCache(
       return;
     }
 
-    const fresh = await fetcher();
+    try {
+      const fresh = await fetcher();
 
-    await cacheDashboardData(fresh);
+      await cacheDashboardData(fresh);
 
-    setData(fresh);
-    setOffline(false);
-    setUpdatedAt(Date.now());
-    setStale(false);
+      setData(fresh);
+      setOffline(false);
+      setUpdatedAt(Date.now());
+      setStale(false);
+    } catch (err) {
+      const error =
+        err instanceof Error
+          ? err
+          : new Error(String(err));
 
-    setLoading(false);
+      setError(error);
+      setOffline(true);
+
+      const cached =
+        await getCachedDashboardData();
+
+      if (cached) {
+        setData(cached.data);
+        setUpdatedAt(cached.updatedAt);
+
+        const age =
+          Date.now() - cached.updatedAt;
+
+        setStale(age > 1000 * 60 * 30);
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   return {
     data,
     loading,
     offline,
+    error,
     updatedAt,
     stale,
     refresh: load,

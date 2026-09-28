@@ -116,6 +116,24 @@ export class UserService {
   }
 
   /**
+   * Mark a user's email verified, but only if their current email still
+   * equals `email`. A single conditional UPDATE, so an address change that
+   * lands first makes this a no-op.
+   *
+   * @returns `true` if the user was marked verified.
+   */
+  async markEmailVerified(userId: string, email: string): Promise<boolean> {
+    const result = await this.userRepository
+      .createQueryBuilder()
+      .update(User)
+      .set({ emailVerified: true })
+      .where('id = :userId AND email = :email', { userId, email })
+      .execute();
+
+    return (result.affected ?? 0) === 1;
+  }
+
+  /**
    * Atomically consume a refresh token and issue its successor inside a
    * single serialised transaction.
    *
