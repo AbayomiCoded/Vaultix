@@ -1,9 +1,15 @@
 import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
+import {
+  buildDatabaseConnectionOptions,
+  getDatabaseType,
+} from './config/database.config';
 import { User } from './modules/user/entities/user.entity';
 import { RefreshToken } from './modules/user/entities/refresh-token.entity';
+import { EmailVerification } from './modules/user/entities/email-verification.entity';
 import { Escrow } from './modules/escrow/entities/escrow.entity';
 import { EscrowCreationIntent } from './modules/escrow/entities/escrow-creation-intent.entity';
+import { SorobanTxIntent } from './modules/escrow/entities/soroban-tx-intent.entity';
 import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
 import { EscrowEvent } from './modules/escrow/entities/escrow-event.entity';
@@ -24,14 +30,17 @@ import { EscrowChainId } from './modules/escrow/entities/escrow-chain-id.entity'
 
 config(); // Load .env file
 
+const databaseType = getDatabaseType();
+
 export default new DataSource({
-  type: 'sqlite',
-  database: process.env.DATABASE_PATH || './data/vaultix.db',
+  ...buildDatabaseConnectionOptions(),
   entities: [
     User,
     RefreshToken,
+    EmailVerification,
     Escrow,
     EscrowCreationIntent,
+    SorobanTxIntent,
     Party,
     Condition,
     EscrowEvent,
@@ -50,6 +59,9 @@ export default new DataSource({
     KycVerification,
     EscrowChainId,
   ],
-  migrations: ['./src/migrations/*.ts'],
+  migrations:
+    databaseType === 'postgres'
+      ? ['./src/migrations-postgres/*.ts']
+      : ['./src/migrations/*.ts'],
   synchronize: false,
-});
+} as import('typeorm').DataSourceOptions);
