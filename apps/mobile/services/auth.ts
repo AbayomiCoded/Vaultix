@@ -15,6 +15,35 @@ import {
 import { clearEscrowCache } from '../services/cache/escrowCache';
 import { clearAllCache } from './cache/cacheKeys';
 
+/**
+ * #761 — teardown side effects that belong to the logout path but must not be
+ * imported here (e.g. de-registering the push token pulls in `expo-notifications`
+ * and the Toast provider). The root layout registers them once, so *every*
+ * logout route — the Settings sign-out button, `signOut()` and the explicit
+ * `logout()` — gets the same cleanup.
+ */
+type LogoutSideEffect = () => void;
+const logoutSideEffects = new Set<LogoutSideEffect>();
+
+/** Register a teardown hook. Returns an unsubscribe function. */
+export function registerLogoutSideEffect(effect: LogoutSideEffect): () => void {
+  logoutSideEffects.add(effect);
+  return () => {
+    logoutSideEffects.delete(effect);
+  };
+}
+
+function runLogoutSideEffects(): void {
+  logoutSideEffects.forEach((effect) => {
+    try {
+      effect();
+    } catch (error) {
+      // A failing side effect must never block the sign-out.
+      console.warn('Logout side effect failed:', error);
+    }
+  });
+}
+
 type RedirectTarget = {
   pathname: string;
   params?: Record<string, string>;
@@ -74,6 +103,12 @@ export function exitGuestMode(): void {
 
 /** Drop the JWT pair and any guest flag, returning the app to anonymous. */
 export async function signOut(): Promise<void> {
+  guestMode = false;
+  await clearSession();
+  await clearEscrowCache();
+  // #761 — stop pushing the previous wallet's escrow activity to this device.
+  runLogoutSideEffects();
+  notify();
   await logout();
 }
 
@@ -89,6 +124,10 @@ export async function signOut(): Promise<void> {
 export async function logout(): Promise<void> {
   guestMode = false;
   await clearSession();
+  await clearAllCache();
+  // #761 — de-register this device's push token on every logout path, including
+  // the Settings "Disconnect wallet" button, which funnels through here.
+  runLogoutSideEffects();
   // `clearAllCache` wipes the dashboard cache and every `escrow_detail_*` key;
   // `clearEscrowCache` additionally drops the LRU index that points at them.
   await Promise.all([clearAllCache(), clearEscrowCache()]);
@@ -133,4 +172,5 @@ export function __resetAuthForTests(): void {
   pendingRedirect = null;
   guestMode = false;
   listeners.clear();
+  logoutSideEffects.clear();
 }

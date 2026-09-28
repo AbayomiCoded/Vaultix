@@ -26,20 +26,21 @@ import { useDisputes } from '../../hooks/useDisputes';
 import { RaiseDisputeModal } from '../../components/RaiseDisputeModal';
 import { DisputeDetailsCard } from '../../components/DisputeDetailsCard';
 import { ResolutionSummary } from '../../components/ResolutionSummary';
+import { colors } from '../../theme';
 
 const CURRENT_USER_ROLE: 'depositor' | 'recipient' | 'arbitrator' = 'depositor';
 
 const STATUS_COLOR: Record<string, string> = {
-  created: '#6c63ff',
-  funded: '#00b4d8',    // mobile alias for contract Active
-  active: '#00b4d8',    // canonical backend value for contract Active
-  confirmed: '#06d6a0', // client-only transient alias
-  released: '#06d6a0',
-  completed: '#06d6a0',
-  cancelled: '#aaa',
-  disputed: '#ef476f',
-  resolved: '#a78bfa',  // contract Resolved terminal state
-  expired: '#f77f00',
+  created: colors.accent,
+  funded: colors.infoAlt,    // mobile alias for contract Active
+  active: colors.infoAlt,    // canonical backend value for contract Active
+  confirmed: colors.successBright, // client-only transient alias
+  released: colors.successBright,
+  completed: colors.successBright,
+  cancelled: colors.textSecondary,
+  disputed: colors.danger,
+  resolved: colors.accentSoft,  // contract Resolved terminal state
+  expired: colors.warning,
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -96,7 +97,7 @@ function PartyRow({ party }: { party: Party }) {
       <View style={styles.partyInfo}>
         <Text style={styles.partyRole}>{party.role.toUpperCase()}</Text>
         <Text style={styles.partyAddress} numberOfLines={1}>{party.walletAddress}</Text>
-        <Text style={[styles.partyStatus, party.status === 'accepted' && { color: '#06d6a0' }]}>
+        <Text style={[styles.partyStatus, party.status === 'accepted' && { color: colors.successBright }]}>
           {party.status}
         </Text>
       </View>
@@ -214,7 +215,7 @@ export default function EscrowDetailScreen() {
     );
   }
 
-  const statusColor = STATUS_COLOR[escrow.status] || '#aaa';
+  const statusColor = STATUS_COLOR[escrow.status] || colors.textSecondary;
   // The contract reports `Active` which the backend serialises as `'active'`.
   // Legacy mobile aliases `'funded'` and `'confirmed'` are also accepted for
   // backwards-compatibility (see types/escrow.ts STATUS_MAPPING comment).
@@ -288,27 +289,27 @@ export default function EscrowDetailScreen() {
 
       <Section title="Actions">
         {escrow.status === 'disputed' && CURRENT_USER_ROLE === 'arbitrator' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#ef476f' }]}>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.danger }]}>
             <Text style={styles.actionBtnText}>Resolve Dispute</Text>
           </TouchableOpacity>
         )}
         {escrow.status === 'created' && CURRENT_USER_ROLE === 'depositor' && (
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#00b4d8' }]}>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.infoAlt }]}>
             <Text style={styles.actionBtnText}>Fund Escrow</Text>
           </TouchableOpacity>
         )}
         {/* Raise dispute available when escrow is in any active variant and user is depositor */}
         {isActiveEscrow && CURRENT_USER_ROLE === 'depositor' && !hasActiveDispute && (
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: '#ef476f22', borderWidth: 1, borderColor: '#ef476f' }]}
+            style={[styles.actionBtn, { backgroundColor: colors.dangerSurface, borderWidth: 1, borderColor: colors.danger }]}
             onPress={() => setDisputeModalVisible(true)}
           >
-            <Text style={[styles.actionBtnText, { color: '#ef476f' }]}>Raise Dispute</Text>
+            <Text style={[styles.actionBtnText, { color: colors.danger }]}>Raise Dispute</Text>
           </TouchableOpacity>
         )}
         {/* resolved is a terminal state: show the resolution summary instead of generic "no actions" */}
         {escrow.status === 'resolved' && (
-          <Text style={[styles.noActions, { color: '#a78bfa' }]}>
+          <Text style={[styles.noActions, { color: colors.accentSoft }]}>
             This escrow has been resolved. See the Dispute Information section above.
           </Text>
         )}
@@ -339,56 +340,56 @@ export default function EscrowDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#12121f' },
-  container: { flex: 1, backgroundColor: '#12121f' },
+  root: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 40 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12121f' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
-  title: { color: '#fff', fontSize: 20, fontWeight: '700', flex: 1, marginRight: 8 },
+  title: { color: colors.text, fontSize: 20, fontWeight: '700', flex: 1, marginRight: 8 },
   statusBadge: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },
   statusText: { fontSize: 11, fontWeight: '700' },
-  description: { color: '#aaa', fontSize: 14, marginBottom: 16, lineHeight: 20 },
+  description: { color: colors.textSecondary, fontSize: 14, marginBottom: 16, lineHeight: 20 },
   metaRow: { flexDirection: 'row', gap: 16, marginBottom: 8 },
-  metaItem: { flex: 1, backgroundColor: '#1e1e30', borderRadius: 10, padding: 12 },
-  metaLabel: { color: '#888', fontSize: 11, marginBottom: 4 },
-  metaValue: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  metaItem: { flex: 1, backgroundColor: colors.surface, borderRadius: 10, padding: 12 },
+  metaLabel: { color: colors.textTertiary, fontSize: 11, marginBottom: 4 },
+  metaValue: { color: colors.text, fontWeight: '600', fontSize: 15 },
   section: { marginTop: 20 },
-  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 10 },
-  milestoneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },
+  sectionTitle: { color: colors.text, fontSize: 16, fontWeight: '700', marginBottom: 10 },
+  milestoneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface, borderRadius: 10, padding: 12, marginBottom: 8 },
   milestoneInfo: { flex: 1, marginRight: 8 },
-  milestoneTitle: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  milestoneAmount: { color: '#888', fontSize: 12, marginTop: 2 },
-  releasedBadge: { backgroundColor: '#06d6a022', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
-  releasedText: { color: '#06d6a0', fontSize: 12, fontWeight: '600' },
-  releaseBtn: { backgroundColor: '#6c63ff', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  releaseBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  pendingBadge: { backgroundColor: '#2d2d44', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
-  pendingText: { color: '#aaa', fontSize: 12 },
-  disputedMilestoneBadge: { backgroundColor: '#ef476f22', borderRadius: 6, borderWidth: 1, borderColor: '#ef476f', paddingHorizontal: 8, paddingVertical: 4 },
-  disputedMilestoneText: { color: '#ef476f', fontSize: 12, fontWeight: '600' },
-  partyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },
+  milestoneTitle: { color: colors.text, fontWeight: '600', fontSize: 14 },
+  milestoneAmount: { color: colors.textTertiary, fontSize: 12, marginTop: 2 },
+  releasedBadge: { backgroundColor: colors.successSurface, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  releasedText: { color: colors.successBright, fontSize: 12, fontWeight: '600' },
+  releaseBtn: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  releaseBtnText: { color: colors.onAccent, fontWeight: '600', fontSize: 13 },
+  pendingBadge: { backgroundColor: colors.surfaceRaised, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  pendingText: { color: colors.textSecondary, fontSize: 12 },
+  disputedMilestoneBadge: { backgroundColor: colors.dangerSurface, borderRadius: 6, borderWidth: 1, borderColor: colors.danger, paddingHorizontal: 8, paddingVertical: 4 },
+  disputedMilestoneText: { color: colors.danger, fontSize: 12, fontWeight: '600' },
+  partyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 10, padding: 12, marginBottom: 8 },
   partyInfo: { flex: 1, marginRight: 8 },
-  partyRole: { color: '#6c63ff', fontWeight: '700', fontSize: 12 },
-  partyAddress: { color: '#fff', fontSize: 14, marginTop: 2 },
-  partyStatus: { color: '#888', fontSize: 12, marginTop: 2 },
+  partyRole: { color: colors.accent, fontWeight: '700', fontSize: 12 },
+  partyAddress: { color: colors.text, fontSize: 14, marginTop: 2 },
+  partyStatus: { color: colors.textTertiary, fontSize: 12, marginTop: 2 },
   timelineItem: { flexDirection: 'row', marginBottom: 10 },
-  timelineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#6c63ff', marginTop: 5, marginRight: 10 },
+  timelineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent, marginTop: 5, marginRight: 10 },
   timelineContent: { flex: 1 },
-  timelineEvent: { color: '#fff', fontSize: 14, fontWeight: '500' },
-  timelineDate: { color: '#777', fontSize: 12, marginTop: 2 },
-  skeletonHeader: { height: 22, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 12, width: '60%' },
-  skeletonLine: { height: 12, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 8, width: '90%' },
+  timelineEvent: { color: colors.text, fontSize: 14, fontWeight: '500' },
+  timelineDate: { color: colors.textTertiary, fontSize: 12, marginTop: 2 },
+  skeletonHeader: { height: 22, backgroundColor: colors.surfaceRaised, borderRadius: 4, marginBottom: 12, width: '60%' },
+  skeletonLine: { height: 12, backgroundColor: colors.surfaceRaised, borderRadius: 4, marginBottom: 8, width: '90%' },
   skeletonRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  skeletonBox: { flex: 1, height: 70, backgroundColor: '#1e1e30', borderRadius: 10 },
-  skeletonSection: { height: 16, backgroundColor: '#2d2d44', borderRadius: 4, marginVertical: 16, width: '40%' },
-  skeletonCard: { height: 90, backgroundColor: '#1e1e30', borderRadius: 10, marginBottom: 12 },
+  skeletonBox: { flex: 1, height: 70, backgroundColor: colors.surface, borderRadius: 10 },
+  skeletonSection: { height: 16, backgroundColor: colors.surfaceRaised, borderRadius: 4, marginVertical: 16, width: '40%' },
+  skeletonCard: { height: 90, backgroundColor: colors.surface, borderRadius: 10, marginBottom: 12 },
   errorEmoji: { fontSize: 36, marginBottom: 8 },
-  errorTitle: { color: '#ef476f', fontSize: 16, fontWeight: '700', marginBottom: 6, textAlign: 'center' },
-  errorMessage: { color: '#aaa', fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16 },
-  retryBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
-  retryText: { color: '#fff', fontWeight: '600' },
+  errorTitle: { color: colors.danger, fontSize: 16, fontWeight: '700', marginBottom: 6, textAlign: 'center' },
+  errorMessage: { color: colors.textSecondary, fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16 },
+  retryBtn: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
+  retryText: { color: colors.onAccent, fontWeight: '600' },
   shareRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   actionBtn: { borderRadius: 10, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  noActions: { color: '#777', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  actionBtnText: { color: colors.onAccent, fontWeight: '600', fontSize: 15 },
+  noActions: { color: colors.textTertiary, fontSize: 14, textAlign: 'center', marginTop: 8 },
 });

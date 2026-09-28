@@ -228,6 +228,19 @@ export const notificationApi = {
   markAsRead: async (notificationId?: string): Promise<void> => {
     await api.post('/api/notifications/mark-as-read', { notificationId });
   },
+
+  /**
+   * #761 — Register this device's Expo push token with the backend so escrow
+   * funding / release / dispute events can be delivered outside the app.
+   */
+  registerDevice: async (device: { pushToken: string; platform: string }): Promise<void> => {
+    await api.post('/api/notifications/devices', device);
+  },
+
+  /** #761 — De-register the push token on logout / disconnect. */
+  unregisterDevice: async (pushToken: string): Promise<void> => {
+    await api.delete(`/api/notifications/devices/${encodeURIComponent(pushToken)}`);
+  },
 };
 export interface ServerDispute {
   id: string;

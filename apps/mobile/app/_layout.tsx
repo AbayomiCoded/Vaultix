@@ -4,15 +4,20 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastProvider } from '../components/Toast';
 import { hydrateSession } from '../services/session';
 import { setSessionExpiredHandler } from '../services/api';
+import { registerLogoutSideEffect } from '../services/auth';
+import { unregisterPushToken } from '../services/pushNotifications';
 import { useRouter } from 'expo-router';
 import { validateEnv } from '../security/env';
 
 import { AppState, AppStateStatus } from 'react-native';
 import { useBiometricLock } from '../hooks/useBiometricLock';
 import { useAppVersion } from '../hooks/useAppVersion';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import { MobileLockScreen } from '../components/MobileLockScreen';
 import { UpdatePromptModal } from '../components/UpdatePromptModal';
-import { useEffect, useRef, useState } from 'react';
+import { colors } from '../theme';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { colors } from '../theme';
 
 export default function RootLayout() {
   const {
@@ -31,6 +36,21 @@ export default function RootLayout() {
   const appState = useRef(AppState.currentState);
   const [updateDismissed, setUpdateDismissed] = useState(false);
 
+  // #761 — Tapping a push notification deep-links to the escrow it is about.
+  // The `useCallback` identity is stable so the effect below runs once.
+  const handlePushTap = useCallback((payload: { escrowId?: string; type?: string }) => {
+    if (payload?.escrowId) {
+      router.push(`/escrow/${payload.escrowId}`);
+      return;
+    }
+    // No escrow attached (e.g. a generic dispute notice) — land on the feed.
+    router.push('/(tabs)/notifications');
+  }, [router]);
+
+  // Installs the foreground Toast handler, the Android channel and the tap
+  // listener. Never prompts for permission — that only happens from Settings.
+  usePushNotifications(handlePushTap);
+
   useEffect(() => {
     validateEnv();
     hydrateSession();
@@ -43,6 +63,12 @@ export default function RootLayout() {
     });
     return () => setSessionExpiredHandler(null);
   }, [router]);
+
+  // #761 — every logout path must de-register this device's push token, so a
+  // shared device stops receiving the previous wallet's escrow activity.
+  useEffect(() => registerLogoutSideEffect(() => {
+    void unregisterPushToken();
+  }), []);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
@@ -122,8 +148,8 @@ export default function RootLayout() {
         {contentReady && (
           <Stack
             screenOptions={{
-              headerStyle: { backgroundColor: '#1a1a2e' },
-              headerTintColor: '#fff',
+              headerStyle: { backgroundColor: colors.surface },
+              headerTintColor: colors.text,
               headerTitleStyle: { fontWeight: 'bold' },
             }}
           >

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import type { BiometricAvailability } from '../hooks/useBiometricLock';
+import { colors } from '../theme';
 
 interface MobileLockScreenProps {
   onUnlock: () => void;
@@ -66,7 +67,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.background,
     padding: 24,
   },
   iconContainer: {
@@ -78,24 +79,24 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.text,
     marginBottom: 12,
   },
   subtitle: {
     fontSize: 16,
-    color: '#94A3B8',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
   },
   recoveryHint: {
     fontSize: 14,
-    color: '#CBD5E1',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 20,
   },
   unlockButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.infoStrong,
     paddingVertical: 14,
     paddingHorizontal: 32,
     borderRadius: 8,
@@ -104,7 +105,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   unlockButtonText: {
-    color: '#FFFFFF',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -115,7 +116,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   fallbackButtonText: {
-    color: '#94A3B8',
+    color: colors.textSecondary,
     fontSize: 16,
   },
 });
