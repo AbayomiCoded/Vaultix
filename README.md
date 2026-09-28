@@ -1,5 +1,5 @@
 # Vaultix
-
+///WIP
 **QuickEx by Vaultix** - A modern, blockchain-powered escrow platform designed to safeguard online transactions by securely holding funds until all conditions are fulfilled. Built on the Stellar blockchain, QuickEx automates fund locking, milestone verification, and releases via smart contracts, minimising disputes and ensuring transparency for every step.
 
 ## 🚀 What is QuickEx?
