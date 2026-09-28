@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { DisputeDetails, DisputeResolution } from '../hooks/useDisputes';
+import { colors } from '../theme';
 
 interface ResolutionSummaryProps {
   dispute: DisputeDetails;
@@ -51,29 +52,29 @@ export const ResolutionSummary: React.FC<ResolutionSummaryProps> = ({ dispute })
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.background,
     padding: 16,
     borderRadius: 8,
     marginTop: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
   title: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#10B981', // Green for resolved
+    color: colors.success, // Green for resolved
     marginBottom: 12,
   },
   row: {
     marginBottom: 8,
   },
   label: {
-    color: '#94A3B8',
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
   },
   value: {
-    color: '#FFF',
+    color: colors.text,
     fontSize: 14,
     marginTop: 2,
   },
@@ -81,15 +82,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: colors.border,
   },
   payoutText: {
-    color: '#FFF',
+    color: colors.text,
     fontSize: 14,
     marginTop: 4,
   },
   timestamp: {
-    color: '#64748B',
+    color: colors.textTertiary,
     fontSize: 12,
     marginTop: 16,
     textAlign: 'right',

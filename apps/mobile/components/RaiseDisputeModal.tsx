@@ -3,6 +3,7 @@ import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityInd
 import * as DocumentPicker from 'expo-document-picker';
 import { disputeApi } from '../services/api';
 import { Upload, X, FileText, Image as ImageIcon, RefreshCw } from 'lucide-react-native';
+import { colors } from '../theme';
 
 interface RaiseDisputeModalProps {
   visible: boolean;
@@ -179,7 +180,7 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
             <TextInput
               style={styles.input}
               placeholder="e.g. Non-delivery, Quality issue"
-              placeholderTextColor="#64748B"
+              placeholderTextColor={colors.textTertiary}
               value={reason}
               onChangeText={setReason}
             />
@@ -188,7 +189,7 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
             <TextInput
               style={[styles.input, styles.textArea]}
               placeholder="Provide details..."
-              placeholderTextColor="#64748B"
+              placeholderTextColor={colors.textTertiary}
               multiline
               numberOfLines={4}
               value={description}
@@ -212,7 +213,7 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
               onPress={handlePickFile}
               disabled={uploadedFiles.length >= MAX_FILES || isSubmitting}
             >
-              <Upload size={20} color="#94A3B8" />
+              <Upload size={20} color={colors.textSecondary} />
               <Text style={styles.uploadButtonText}>
                 {uploadedFiles.length >= MAX_FILES ? 'Max files reached' : 'Tap to upload files'}
               </Text>
@@ -225,9 +226,9 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
                   <View key={file.id} style={styles.fileItem}>
                     <View style={styles.fileIcon}>
                       {isImage(file.type) ? (
-                        <ImageIcon size={20} color="#60A5FA" />
+                        <ImageIcon size={20} color={colors.info} />
                       ) : (
-                        <FileText size={20} color="#94A3B8" />
+                        <FileText size={20} color={colors.textSecondary} />
                       )}
                     </View>
                     <View style={styles.fileInfo}>
@@ -237,9 +238,9 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
                           <Text style={styles.errorText}>{file.error}</Text>
                           <TouchableOpacity onPress={() => retryUpload(file)} disabled={file.isRetrying}>
                             {file.isRetrying ? (
-                              <ActivityIndicator size="small" color="#60A5FA" />
+                              <ActivityIndicator size="small" color={colors.info} />
                             ) : (
-                              <RefreshCw size={14} color="#60A5FA" />
+                              <RefreshCw size={14} color={colors.info} />
                             )}
                           </TouchableOpacity>
                         </View>
@@ -248,14 +249,14 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
                           <View style={styles.progressBar}>
                             <View style={[styles.progressFill, { width: `${file.progress}%` }]} />
                           </View>
-                          <ActivityIndicator size="small" color="#60A5FA" />
+                          <ActivityIndicator size="small" color={colors.info} />
                         </View>
                       ) : (
                         <Text style={styles.successText}>Uploaded</Text>
                       )}
                     </View>
                     <TouchableOpacity onPress={() => removeFile(file.id)} style={styles.removeButton}>
-                      <X size={16} color="#94A3B8" />
+                      <X size={16} color={colors.textSecondary} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -272,7 +273,7 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
                 onPress={handleSumbit}
                 disabled={!reason || !description || isSubmitting}
               >
-                {isSubmitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.submitText}>Submit</Text>}
+                {isSubmitting ? <ActivityIndicator color={colors.onAccent} /> : <Text style={styles.submitText}>Submit</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -285,14 +286,14 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
   },
   scrollView: {
     maxHeight: '90%',
   },
   modalContent: {
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 24,
@@ -300,37 +301,37 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFF',
+    color: colors.text,
     marginBottom: 16,
   },
   warningBox: {
-    backgroundColor: '#451A03',
+    backgroundColor: colors.warningSurface,
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
   },
   warningText: {
-    color: '#FDE047',
+    color: colors.warningSoft,
     fontSize: 14,
   },
   label: {
-    color: '#94A3B8',
+    color: colors.textSecondary,
     marginBottom: 8,
     fontWeight: '600',
   },
   helperText: {
-    color: '#64748B',
+    color: colors.textTertiary,
     fontSize: 12,
     marginBottom: 8,
   },
   sizeText: {
-    color: '#64748B',
+    color: colors.textTertiary,
     fontSize: 12,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#0F172A',
-    color: '#FFF',
+    backgroundColor: colors.background,
+    color: colors.text,
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
@@ -340,9 +341,9 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   uploadButton: {
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.background,
     borderWidth: 2,
-    borderColor: '#334155',
+    borderColor: colors.border,
     borderStyle: 'dashed',
     borderRadius: 8,
     padding: 16,
@@ -356,7 +357,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   uploadButtonText: {
-    color: '#94A3B8',
+    color: colors.textSecondary,
     fontSize: 14,
     fontWeight: '500',
   },
@@ -366,7 +367,7 @@ const styles = StyleSheet.create({
   fileItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.background,
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
@@ -375,7 +376,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -384,7 +385,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fileName: {
-    color: '#FFF',
+    color: colors.text,
     fontSize: 14,
     marginBottom: 4,
   },
@@ -394,7 +395,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   errorText: {
-    color: '#EF4444',
+    color: colors.danger,
     fontSize: 12,
   },
   progressRow: {
@@ -405,16 +406,16 @@ const styles = StyleSheet.create({
   progressBar: {
     flex: 1,
     height: 4,
-    backgroundColor: '#334155',
+    backgroundColor: colors.border,
     borderRadius: 2,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#60A5FA',
+    backgroundColor: colors.info,
   },
   successText: {
-    color: '#10B981',
+    color: colors.success,
     fontSize: 12,
   },
   removeButton: {
@@ -430,11 +431,11 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   cancelText: {
-    color: '#94A3B8',
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   submitButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: colors.danger,
     padding: 12,
     borderRadius: 8,
     minWidth: 100,
@@ -444,7 +445,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   submitText: {
-    color: '#FFF',
+    color: colors.onAccent,
     fontWeight: 'bold',
   },
 });

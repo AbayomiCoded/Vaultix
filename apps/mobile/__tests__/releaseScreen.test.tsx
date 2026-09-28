@@ -17,11 +17,21 @@ jest.mock('../services/api', () => ({
   escrowApi: {
     releaseMilestone: jest.fn(),
     getTxStatus: jest.fn(),
+    getById: jest.fn(),
   },
 }));
 
 jest.mock('../services/auth', () => ({
   requireAuth: jest.fn(),
+}));
+
+// #762 — the re-auth gate is exercised in biometricReauth.test.tsx; here the
+// requirement is off so the param-handling cases stay focused.
+jest.mock('../hooks/useBiometricLock', () => ({
+  useBiometricLock: () => ({
+    reauthenticate: jest.fn().mockResolvedValue({ required: false, success: true }),
+    isReauthing: false,
+  }),
 }));
 
 const mockedParams = useLocalSearchParams as jest.Mock;
@@ -89,6 +99,7 @@ describe('ReleaseMilestoneScreen', () => {
   });
 
   it('releases the milestone with the resolved params once they arrive', async () => {
+    mockedEscrowApi.getById.mockResolvedValue({ id: 'escrow-1', asset: 'XLM', milestones: [] });
     mockedEscrowApi.releaseMilestone.mockResolvedValue({ txHash: 'tx-1' });
     mockedEscrowApi.getTxStatus.mockResolvedValue({ status: 'confirmed', confirmed: true });
 

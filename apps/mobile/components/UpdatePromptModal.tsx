@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Linking,
 } from 'react-native';
+import { colors } from '../theme';
 
 interface UpdatePromptModalProps {
   visible: boolean;
@@ -66,7 +67,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.background,
     padding: 24,
   },
   icon: {
@@ -76,18 +77,18 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.text,
     marginBottom: 12,
   },
   subtitle: {
     fontSize: 16,
-    color: '#94A3B8',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 48,
     lineHeight: 24,
   },
   updateButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.infoStrong,
     paddingVertical: 14,
     paddingHorizontal: 32,
     borderRadius: 8,
@@ -96,7 +97,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   updateButtonText: {
-    color: '#FFFFFF',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   laterButtonText: {
-    color: '#94A3B8',
+    color: colors.textSecondary,
     fontSize: 16,
   },
 });
