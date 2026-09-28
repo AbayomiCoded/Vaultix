@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { disputeApi } from '../services/api';
-import { Upload, X, FileText, Image as ImageIcon, RefreshCw } from 'lucide-react-native';
+import { Upload, X, FileText, Image as ImageIcon, RefreshCw, AlertTriangle } from 'lucide-react-native';
 import { colors } from '../theme';
 
 interface RaiseDisputeModalProps {
@@ -34,11 +34,36 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
   const [description, setDescription] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
 
-  const handleSumbit = async () => {
-    if (reason && description) {
-      const evidenceCids = uploadedFiles.filter(f => f.cid).map(f => f.cid!);
-      await onSubmit(reason, description, evidenceCids.length > 0 ? evidenceCids : undefined);
+  /**
+   * Uploads are started fire-and-forget right after a file is picked, so they can
+   * still be in flight when the user taps Submit. Filing the dispute then would
+   * silently drop every file that had not finished yet — and there is no way to
+   * attach evidence afterwards — so Submit stays disabled until every file has
+   * either produced a CID or failed (#765).
+   */
+  const pendingUploads = uploadedFiles.filter(
+    (f) => !f.cid && !f.error && f.progress < 100,
+  ).length;
+  const failedUploads = uploadedFiles.filter((f) => Boolean(f.error)).length;
+  const uploadsSettled = pendingUploads === 0 && failedUploads === 0;
+  const isSubmitDisabled = !reason || !description || isSubmitting || !uploadsSettled;
+
+  const submitBlockedReason = (() => {
+    if (pendingUploads > 0) {
+      return `Waiting for ${pendingUploads} file${pendingUploads === 1 ? '' : 's'} to finish uploading`;
     }
+    if (failedUploads > 0) {
+      return `${failedUploads} file${failedUploads === 1 ? '' : 's'} failed to upload — retry or remove ${failedUploads === 1 ? 'it' : 'them'}`;
+    }
+    return null;
+  })();
+
+  const handleSubmit = async () => {
+    // Guard against a tap that lands while an upload is still settling: do not
+    // file a dispute with partial (or zero) evidence.
+    if (!reason || !description || !uploadsSettled) return;
+    const evidenceCids = uploadedFiles.filter(f => f.cid).map(f => f.cid!);
+    await onSubmit(reason, description, evidenceCids.length > 0 ? evidenceCids : undefined);
   };
 
   const handlePickFile = async () => {
@@ -255,8 +280,13 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
                         <Text style={styles.successText}>Uploaded</Text>
                       )}
                     </View>
-                    <TouchableOpacity onPress={() => removeFile(file.id)} style={styles.removeButton}>
-                      <X size={16} color={colors.textSecondary} />
+                    <TouchableOpacity
+                      onPress={() => removeFile(file.id)}
+                      style={styles.removeButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${file.name}`}
+                    >
+                      <X size={16} color="#94A3B8" />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -269,13 +299,27 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.submitButton, (!reason || !description || isSubmitting) && styles.disabledButton]} 
-                onPress={handleSumbit}
-                disabled={!reason || !description || isSubmitting}
+                style={[styles.submitButton, isSubmitDisabled && styles.disabledButton]} 
+                onPress={handleSubmit}
+                disabled={isSubmitDisabled}
+                accessibilityRole="button"
+                accessibilityLabel="Submit dispute"
+                accessibilityState={{ disabled: isSubmitDisabled }}
               >
                 {isSubmitting ? <ActivityIndicator color={colors.onAccent} /> : <Text style={styles.submitText}>Submit</Text>}
               </TouchableOpacity>
             </View>
+
+            {submitBlockedReason && (
+              <View style={styles.submitHintRow}>
+                {pendingUploads > 0 ? (
+                  <ActivityIndicator size="small" color="#F59E0B" />
+                ) : (
+                  <AlertTriangle size={14} color="#F59E0B" />
+                )}
+                <Text style={styles.submitHintText}>{submitBlockedReason}</Text>
+              </View>
+            )}
           </View>
         </ScrollView>
       </View>
@@ -447,5 +491,17 @@ const styles = StyleSheet.create({
   submitText: {
     color: colors.onAccent,
     fontWeight: 'bold',
+  },
+  submitHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    justifyContent: 'flex-end',
+  },
+  submitHintText: {
+    color: '#F59E0B',
+    fontSize: 12,
+    flexShrink: 1,
   },
 });
