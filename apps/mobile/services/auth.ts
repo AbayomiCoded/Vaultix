@@ -74,20 +74,24 @@ export function exitGuestMode(): void {
 
 /** Drop the JWT pair and any guest flag, returning the app to anonymous. */
 export async function signOut(): Promise<void> {
-  guestMode = false;
-  await clearSession();
-  await clearEscrowCache();
-  notify();
+  await logout();
 }
 
 /**
- * Full logout: clears the JWT pair, wallet address, cached escrow data,
- * and any guest flag (#549). Use this when the user explicitly signs out.
+ * Full logout: clears the JWT pair, wallet address, guest flag, and **all**
+ * cached data (dashboard + every `escrow_detail_*` entry) (#549).
+ *
+ * This is the single shared logout routine — `signOut`, "Disconnect wallet" and
+ * the Settings sign-out button all funnel through it, so no caller can drift
+ * into a partial teardown that leaves one wallet's cache visible to the next
+ * (#764).
  */
 export async function logout(): Promise<void> {
   guestMode = false;
   await clearSession();
-  await clearAllCache();
+  // `clearAllCache` wipes the dashboard cache and every `escrow_detail_*` key;
+  // `clearEscrowCache` additionally drops the LRU index that points at them.
+  await Promise.all([clearAllCache(), clearEscrowCache()]);
   notify();
 }
 

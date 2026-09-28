@@ -11,7 +11,6 @@ import { useBiometricLock } from '../../hooks/useBiometricLock';
 import { useSession } from '../../hooks/useSession';
 import { CopyButton } from '../../components/CopyButton';
 import { revealWalletSeed, importWalletFromSeed, removeWallet } from '../../services/wallet';
-import { clearSession } from '../../services/session';
 import { resetSessionExpiryGate } from '../../services/api';
 
 function truncateAddress(address: string): string {
@@ -82,14 +81,18 @@ export default function SettingsScreen() {
   const handleDisconnectWallet = () => {
     Alert.alert(
       'Disconnect Wallet',
-      'This signs you out and clears the stored session token. You will need to reconnect your wallet.',
+      'This signs you out, clears the stored session token and all cached escrow data. You will need to reconnect your wallet.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Disconnect',
           style: 'destructive',
           onPress: async () => {
-            await clearSession();
+            // Go through the shared logout routine rather than calling
+            // `clearSession()` directly, so disconnecting clears the dashboard
+            // cache, every `escrow_detail_*` entry and the guest flag exactly
+            // like "Sign out" does (#764).
+            await signOut();
             resetSessionExpiryGate();
             router.replace('/');
           },
