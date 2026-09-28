@@ -1,3 +1,11 @@
+/**
+ * Escrow and milestone types for the frontend.
+ *
+ * The escrow/milestone status model is reconciled across the contract, backend,
+ * and clients in docs/STATUS_MAPPING.md. Status values crossing the API boundary
+ * are normalized to CanonicalEscrowStatus (see utils/escrowStatus.ts); consult
+ * STATUS_MAPPING.md before adding or renaming a status here.
+ */
 import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
 
 export interface IEscrow {
