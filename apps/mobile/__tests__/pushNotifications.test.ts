@@ -55,6 +55,7 @@ const mockNotifications = {
   setNotificationHandler: jest.fn(),
   setNotificationChannelAsync: jest.fn(),
   addNotificationResponseReceivedListener: jest.fn(),
+  addNotificationReceivedListener: jest.fn(),
   getPermissionsAsync: jest.fn(),
   requestPermissionsAsync: jest.fn(),
   getExpoPushTokenAsync: jest.fn(),
