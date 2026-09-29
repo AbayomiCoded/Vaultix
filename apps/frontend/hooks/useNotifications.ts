@@ -162,6 +162,7 @@ export const useNotifications = (): UseNotificationsReturn => {
 
   // Track whether initial fetch has happened to avoid double-fetch in StrictMode
   const initialFetchDone = useRef(false);
+  const hasConnectedBefore = useRef(false);
 
   // Debounce state for API calls
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -327,6 +328,14 @@ export const useNotifications = (): UseNotificationsReturn => {
     void fetchNotifications();
     void fetchPreferences();
   }, [fetchNotifications, fetchPreferences]);
+
+  useEffect(() => {
+    if (!isConnected) return;
+    if (hasConnectedBefore.current) {
+      void fetchNotifications();
+    }
+    hasConnectedBefore.current = true;
+  }, [isConnected, fetchNotifications]);
 
   useEffect(() => {
     if (!socket || !isConnected) return;

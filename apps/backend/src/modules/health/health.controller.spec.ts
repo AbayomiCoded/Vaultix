@@ -6,7 +6,7 @@ import { HealthController } from './health.controller';
 import { StellarService } from '../../services/stellar.service';
 import { EmailService } from '../../email/email.service';
 import { IpfsProviderService } from '../ipfs/services/ipfs-provider.service';
-import { EscrowGateway } from '../../gateways/escrow.gateway';
+import { EventsGateway } from '../../gateways/events.gateway';
 import { User } from '../user/entities/user.entity';
 import { Escrow } from '../escrow/entities/escrow.entity';
 
@@ -19,7 +19,7 @@ describe('HealthController', () => {
   const stellarService = {
     checkHealth: jest.fn(),
   };
-  const escrowGateway = {
+  const eventsGateway = {
     isHealthy: jest.fn(),
   };
   const emailService = {
@@ -49,7 +49,7 @@ describe('HealthController', () => {
       database: { status: 'up' },
     });
     stellarService.checkHealth.mockResolvedValue(true);
-    escrowGateway.isHealthy.mockReturnValue(true);
+    eventsGateway.isHealthy.mockReturnValue(true);
     ipfsProviderService.checkHealth.mockResolvedValue(true);
     ipfsProviderService.isConfigured = true;
     emailService.isConfigured = false;
@@ -62,7 +62,7 @@ describe('HealthController', () => {
       providers: [
         { provide: TypeOrmHealthIndicator, useValue: typeOrmHealthIndicator },
         { provide: StellarService, useValue: stellarService },
-        { provide: EscrowGateway, useValue: escrowGateway },
+        { provide: EventsGateway, useValue: eventsGateway },
         { provide: EmailService, useValue: emailService },
         { provide: IpfsProviderService, useValue: ipfsProviderService },
         { provide: ConfigService, useValue: configService },
@@ -207,7 +207,7 @@ describe('HealthController', () => {
             useValue: typeOrmHealthIndicator,
           },
           { provide: StellarService, useValue: stellarService },
-          { provide: EscrowGateway, useValue: escrowGateway },
+          { provide: EventsGateway, useValue: eventsGateway },
           { provide: EmailService, useValue: emailService },
           { provide: IpfsProviderService, useValue: ipfsProviderService },
           { provide: ConfigService, useValue: configService },

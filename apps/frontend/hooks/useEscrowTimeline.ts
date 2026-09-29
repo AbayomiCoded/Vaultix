@@ -8,13 +8,7 @@ import { useGlobalWebSocket } from '@/app/contexts/WebSocketContext';
 const POLL_INTERVAL_MS = 30_000;
 
 const WS_EVENT_NAMES = [
-  'escrow:status_changed',
-  'escrow:funded',
-  'escrow:completed',
-  'escrow:cancelled',
-  'escrow:dispute_filed',
-  'escrow:dispute_resolved',
-  'escrow:event',
+  'escrow.event',
 ];
 
 export interface UseEscrowTimelineReturn {
@@ -60,13 +54,22 @@ export function useEscrowTimeline(
   useEffect(() => {
     if (!socket || !isConnected || !escrowId) return;
 
-    socket.emit('escrow:join', { id: escrowId });
+    socket.emit('joinEscrow', {
+      escrowId,
+      afterCursor: window.localStorage.getItem(`vaultix:events:${escrowId}`) ?? undefined,
+    });
 
-    const handleUpdate = () => void fetch();
+    const handleUpdate = (event?: { cursor?: string }) => {
+      if (typeof event?.cursor === 'string') {
+        window.localStorage.setItem(`vaultix:events:${escrowId}`, event.cursor);
+      }
+      void fetch();
+    };
     WS_EVENT_NAMES.forEach((evt) => socket.on(evt, handleUpdate));
 
     return () => {
       WS_EVENT_NAMES.forEach((evt) => socket.off(evt, handleUpdate));
+      socket.emit('leaveEscrow', escrowId);
     };
   }, [socket, isConnected, escrowId, fetch]);
 
