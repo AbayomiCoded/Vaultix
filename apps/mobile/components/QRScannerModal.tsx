@@ -9,12 +9,14 @@ import {
 import * as StellarSdk from "@stellar/stellar-sdk";
 
 import {
-  BarCodeScanner,
-  BarCodeScannerResult,
-} from "expo-barcode-scanner";
+  BarcodeScanningResult,
+  CameraView,
+  useCameraPermissions,
+} from "expo-camera";
 
 import { processScannedQRCode } from "../services/qrScanner";
 import ScanResultBanner from "./ScanResultBanner";
+import { colors } from '../theme';
 
 type Props = {
   visible: boolean;
@@ -30,8 +32,7 @@ export default function QRScannerModal({
   onEscrowScanned,
 }: Props) {
 
-  const [permission, setPermission] =
-    useState<boolean | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
 
   const [hasScanned, setHasScanned] = useState(false);
 
@@ -39,17 +40,14 @@ export default function QRScannerModal({
     useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      const { status } =
-        await BarCodeScanner.requestPermissionsAsync();
-
-      setPermission(status === "granted");
-    })();
-  }, []);
+    if (visible && permission?.status === "undetermined") {
+      void requestPermission();
+    }
+  }, [visible, permission?.status, requestPermission]);
 
   const handleScan = ({
     data,
-  }: BarCodeScannerResult) => {
+  }: BarcodeScanningResult) => {
 
     if (hasScanned) return;
 
@@ -87,7 +85,7 @@ export default function QRScannerModal({
     }, 2000);
   };
 
-  if (permission === false) {
+  if (permission && !permission.granted) {
     return (
       <Modal visible={visible} transparent onRequestClose={onClose}>
         <View style={styles.permissionBackdrop}>
@@ -157,34 +155,37 @@ export default function QRScannerModal({
 const styles = StyleSheet.create({
   permissionBackdrop: {
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: colors.overlay,
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: 24,
   },
   permissionCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 16,
+    borderWidth: 1,
     padding: 24,
     width: "100%",
   },
   permissionTitle: {
+    color: colors.text,
     fontSize: 16,
     fontWeight: "600",
   },
   permissionButton: {
-    backgroundColor: "#000",
+    backgroundColor: colors.accent,
     borderRadius: 12,
     marginTop: 16,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   permissionButtonText: {
-    color: "#fff",
+    color: colors.onAccent,
     textAlign: "center",
   },
   scannerContainer: {
-    backgroundColor: "#000",
+    backgroundColor: colors.scrim,
     flex: 1,
   },
   header: {
@@ -195,7 +196,7 @@ const styles = StyleSheet.create({
     top: 64,
   },
   headerText: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 18,
     fontWeight: "600",
     textAlign: "center",
@@ -208,11 +209,14 @@ const styles = StyleSheet.create({
     right: 0,
   },
   cancelButton: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
     borderRadius: 16,
+    borderWidth: 1,
     paddingVertical: 16,
   },
   cancelButtonText: {
+    color: colors.text,
     fontWeight: "600",
     textAlign: "center",
   },

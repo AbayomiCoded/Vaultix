@@ -35,7 +35,8 @@ async function updateLruIndex(key: string) {
   );
 
   if (excess.length > 0) {
-    await AsyncStorage.removeMany(excess);
+    // AsyncStorage exposes `multiRemove`, not `removeMany` (#763).
+    await AsyncStorage.multiRemove(excess);
   }
 
   await AsyncStorage.setItem(
@@ -109,5 +110,6 @@ export async function clearEscrowCache() {
 
   index.push(LRU_INDEX_KEY);
 
-  await AsyncStorage.removeMany(index);
+  // AsyncStorage exposes `multiRemove`, not `removeMany` (#763).
+  await AsyncStorage.multiRemove(index);
 }

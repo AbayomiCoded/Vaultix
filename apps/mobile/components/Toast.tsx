@@ -20,9 +20,9 @@ export interface ToastConfig {
 }
 
 const TYPE_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
-  success: { bg: '#06d6a0', text: '#1a1a2e', icon: '✓' },
-  error: { bg: '#ef476f', text: '#fff', icon: '✕' },
-  info: { bg: '#6c63ff', text: '#fff', icon: 'ℹ' },
+  success: { bg: colors.successBright, text: colors.textInverse, icon: '✓' },
+  error: { bg: colors.danger, text: colors.onAccent, icon: '✕' },
+  info: { bg: colors.accent, text: colors.onAccent, icon: 'ℹ' },
 };
 
 interface ToastState extends ToastConfig {
@@ -69,7 +69,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, [toast, dismiss]);
 
   const type = toast?.type ?? 'success';
-  const colors = TYPE_COLORS[type];
+  const palette = TYPE_COLORS[type];
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -82,7 +82,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           accessibilityRole="alert"
         >
           <TouchableOpacity
-            style={[styles.toast, { backgroundColor: colors.bg }]}
+            style={[styles.toast, { backgroundColor: palette.bg }]}
             onPress={dismiss}
             activeOpacity={0.85}
             accessibilityRole="button"
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 8,
     elevation: 6,
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 6,

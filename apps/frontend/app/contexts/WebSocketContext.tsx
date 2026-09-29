@@ -46,7 +46,7 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
         : null;
     const token = authToken ?? legacyToken;
 
-    const socketInstance = io(`${WEBSOCKET_URL.replace(/\/$/, '')}/escrow`, {
+    const socketInstance = io(`${WEBSOCKET_URL.replace(/\/$/, '')}/events`, {
       transports: ['websocket'],
       auth: { token: token ?? undefined },
       autoConnect: true,

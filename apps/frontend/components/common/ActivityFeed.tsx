@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Filter, Loader2, RefreshCw, Zap } from 'lucide-react';
@@ -41,7 +43,7 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
         escrowId,
         eventType: filter,
         limit: 10,
-        refetchInterval: 10000, // Real-time poll every 10s
+        refetchInterval: false,
     });
 
     // Manual refresh animation

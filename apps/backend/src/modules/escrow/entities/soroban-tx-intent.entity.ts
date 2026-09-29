@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 /**
  * Operations that can be prepared as a wallet-signable Soroban intent.
@@ -85,7 +86,7 @@ export class SorobanTxIntent {
   @Column({ type: 'text', name: 'unsigned_xdr' })
   unsignedXdr: string;
 
-  @Column({ type: 'datetime', name: 'expires_at' })
+  @Column({ type: DATETIME_COLUMN_TYPE, name: 'expires_at' })
   expiresAt: Date;
 
   @Column({ type: 'varchar', default: SorobanIntentStatus.PENDING })
@@ -111,7 +112,7 @@ export class SorobanTxIntent {
   @Column({ type: 'varchar', nullable: true, name: 'signed_xdr_hash' })
   signedXdrHash?: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   txHash?: string | null;
 
   @Column({ type: 'text', nullable: true, name: 'error_message' })

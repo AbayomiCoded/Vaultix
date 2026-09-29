@@ -257,14 +257,23 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    // If email is being updated, reset emailVerified
+    // emailVerified is only ever set by verifyEmail, never by the client
+    const updateData: Partial<User> = { ...updateProfileDto };
+    delete updateData.emailVerified;
+
+    // If email is being updated, reset emailVerified and invalidate any
+    // outstanding tokens issued for the previous address
     const emailChanged =
       Boolean(updateProfileDto.email) && updateProfileDto.email !== user.email;
     if (emailChanged) {
-      updateProfileDto.emailVerified = false;
+      updateData.emailVerified = false;
+      await this.emailVerificationRepository.update(
+        { userId, isUsed: false },
+        { isUsed: true },
+      );
     }
 
-    const updated = await this.userService.update(userId, updateProfileDto);
+    const updated = await this.userService.update(userId, updateData);
 
     // Automatically send a verification email whenever a new address is set
     if (emailChanged) {
@@ -314,6 +323,7 @@ export class AuthService {
     // Save token
     const emailVerification = this.emailVerificationRepository.create({
       userId,
+      email: user.email,
       token,
       expiresAt,
     });
@@ -343,19 +353,59 @@ export class AuthService {
     return `${baseUrl}?token=${encodeURIComponent(token)}`;
   }
 
+  /**
+   * Consume a verification token and mark the user's email verified.
+   *
+   * The token is only accepted while the user's current email still equals
+   * the address it was issued for. Both writes are single conditional
+   * UPDATEs whose affected-row count decides the outcome:
+   * 1. the token is flipped to used only if it is still unused, so
+   *    concurrent requests with the same token have exactly one winner;
+   * 2. the winner marks the user verified only if their email still equals
+   *    the token's address, so a change racing in between is never verified.
+   * Stale, used or expired tokens are rejected without touching the user.
+   */
   async verifyEmail(token: string): Promise<void> {
-    const verification = await this.emailVerificationRepository.findOne({
-      where: { token, isUsed: false },
-    });
+    const invalid = () =>
+      new BadRequestException('Invalid or expired verification token');
 
-    if (!verification || verification.expiresAt < new Date()) {
-      throw new BadRequestException('Invalid or expired verification token');
+    const verification = await this.emailVerificationRepository.findOne({
+      where: { token },
+    });
+    if (
+      !verification ||
+      verification.isUsed ||
+      !verification.email ||
+      verification.expiresAt < new Date()
+    ) {
+      throw invalid();
     }
 
-    verification.isUsed = true;
-    await this.emailVerificationRepository.save(verification);
+    const user = await this.userService.findById(verification.userId);
+    if (!user || user.email !== verification.email) {
+      throw invalid();
+    }
 
-    await this.userService.update(verification.userId, { emailVerified: true });
+    const consumed = await this.emailVerificationRepository
+      .createQueryBuilder()
+      .update(EmailVerification)
+      .set({ isUsed: true })
+      .where('id = :id AND isUsed = :used', {
+        id: verification.id,
+        used: false,
+      })
+      .execute();
+    if ((consumed.affected ?? 0) !== 1) {
+      throw invalid();
+    }
+
+    const marked = await this.userService.markEmailVerified(
+      verification.userId,
+      verification.email,
+    );
+    if (!marked) {
+      throw invalid();
+    }
   }
 
   async validateToken(

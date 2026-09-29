@@ -35,6 +35,7 @@ import { EscrowChainId } from './entities/escrow-chain-id.entity';
 import { EscrowChainIdService } from './services/escrow-chain-id.service';
 import { SorobanTxIntent } from './entities/soroban-tx-intent.entity';
 import { SorobanIntentService } from './services/soroban-intent.service';
+import { EventsModule } from '../../gateways/events.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { SorobanIntentService } from './services/soroban-intent.service';
     WebhookModule,
     IpfsModule,
     NotificationsModule,
+    EventsModule,
     forwardRef(() => AdminModule),
   ],
   controllers: [EscrowController, EscrowSchedulerController, EventsController],

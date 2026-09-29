@@ -19,3 +19,19 @@ jobs:
       - name: Build
         working-directory: apps/backend
         run: npm run build
+
+  conflict-markers:
+    name: Reject committed merge-conflict markers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on unresolved conflict markers
+        run: |
+          # A line of exactly seven '=' is also a Markdown setext heading
+          # underline, so Markdown is excluded to avoid flagging valid docs.
+          # Covers the classic three markers plus the diff3 base marker '|||||||'.
+          if git grep -nE '^(<{7}|={7}|>{7}|\|{7})( |$)' -- . ':!*.md'; then
+            echo '::error::Unresolved merge-conflict markers are committed. Resolve them before merging.'
+            exit 1
+          fi
+          echo 'No conflict markers found in tracked files.'

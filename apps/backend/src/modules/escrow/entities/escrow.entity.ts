@@ -13,6 +13,7 @@ import { User } from '../../user/entities/user.entity';
 import { Party } from './party.entity';
 import { Condition } from './condition.entity';
 import { EscrowEvent } from './escrow-event.entity';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 export enum EscrowStatus {
   PENDING = 'pending',
@@ -93,7 +94,7 @@ export class Escrow {
   @Column({ type: 'varchar', nullable: true })
   chainEscrowId?: string;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   fundedAt?: Date;
 
   /**
@@ -108,10 +109,10 @@ export class Escrow {
   @Column({ default: false })
   isReleased: boolean;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   expiresAt?: Date;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   expirationNotifiedAt?: Date;
 
   @Column({ default: true })
