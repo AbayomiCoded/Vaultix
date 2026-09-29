@@ -8,7 +8,7 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Observable, catchError, throwError } from 'rxjs';
+import { Observable, catchError, from, switchMap, throwError } from 'rxjs';
 import {
   AVATAR_ERROR_MESSAGES,
   AVATAR_MAX_SIZE_BYTES,
@@ -59,6 +59,7 @@ export class AvatarUploadInterceptor implements NestInterceptor {
         if (!isAllowedAvatarMimeType(file.mimetype)) {
           callback(
             new BadRequestException(AVATAR_ERROR_MESSAGES.UNSUPPORTED_TYPE),
+            false,
           );
           return;
         }
@@ -67,11 +68,16 @@ export class AvatarUploadInterceptor implements NestInterceptor {
     }))();
   }
 
-  intercept(
-    context: ExecutionContext,
-    next: CallHandler,
-  ): Observable<unknown> {
-    return this.delegate.intercept(context, next).pipe(
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const result = this.delegate.intercept(context, next) as
+      | Observable<unknown>
+      | Promise<Observable<unknown>>;
+    const source =
+      result instanceof Promise
+        ? from(result).pipe(switchMap((inner) => inner))
+        : result;
+
+    return source.pipe(
       catchError((error: unknown) =>
         throwError(() => toAvatarUploadException(error)),
       ),
