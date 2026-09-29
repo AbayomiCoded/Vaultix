@@ -4,13 +4,22 @@ import { UserService } from '../../user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { EmailVerification } from '../../user/entities/email-verification.entity';
 import { IpfsService } from '../../ipfs/ipfs.service';
 import { EmailService } from '../../../email/email.service';
 import { EmailTemplatesService } from '../../../email/email-templates.service';
 import { PreferenceService } from '../../../notifications/preference.service';
+import {
+  AVATAR_ERROR_MESSAGES,
+  AVATAR_MAX_SIZE_BYTES,
+} from '../utils/avatar-upload.util';
+import {
+  createMalformedPngBuffer,
+  createPngBuffer,
+  createTextBuffer,
+} from '../../../../test/setup/avatar-fixtures';
 
 // Mock Stellar SDK
 jest.mock('stellar-sdk', () => ({
@@ -373,6 +382,82 @@ describe('AuthService', () => {
         BadRequestException,
       );
       expect(emailService.sendEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('uploadAvatar', () => {
+    const AVATAR_URL = 'https://gateway.pinata.cloud/ipfs/QmTestCid';
+
+    beforeEach(() => {
+      userService.findById.mockResolvedValue(mockUser as any);
+      ipfsService.uploadFile.mockResolvedValue('QmTestCid');
+      ipfsService.getGatewayUrl.mockReturnValue(AVATAR_URL);
+      userService.update.mockResolvedValue({
+        ...mockUser,
+        avatarUrl: AVATAR_URL,
+      } as any);
+    });
+
+    it('should upload a supported image and persist the gateway URL', async () => {
+      const buffer = createPngBuffer();
+
+      const result = await service.uploadAvatar('user-id', {
+        buffer,
+        originalname: 'me.png',
+        mimetype: 'image/png',
+      } as any);
+
+      expect(ipfsService.uploadFile).toHaveBeenCalledWith(buffer, 'avatar.png');
+      expect(userService.update).toHaveBeenCalledWith('user-id', {
+        avatarUrl: AVATAR_URL,
+      });
+      expect(result.avatarUrl).toBe(AVATAR_URL);
+    });
+
+    it('should not reach IPFS when the file is missing', async () => {
+      await expect(service.uploadAvatar('user-id', undefined)).rejects.toThrow(
+        AVATAR_ERROR_MESSAGES.MISSING_FILE,
+      );
+      expect(ipfsService.uploadFile).not.toHaveBeenCalled();
+      expect(userService.update).not.toHaveBeenCalled();
+    });
+
+    it('should not reach IPFS for an empty file', async () => {
+      await expect(
+        service.uploadAvatar('user-id', { buffer: Buffer.alloc(0) } as any),
+      ).rejects.toThrow(AVATAR_ERROR_MESSAGES.EMPTY_FILE);
+      expect(ipfsService.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('should not reach IPFS for an oversized image', async () => {
+      await expect(
+        service.uploadAvatar('user-id', {
+          buffer: Buffer.alloc(AVATAR_MAX_SIZE_BYTES + 1, 0x41),
+        } as any),
+      ).rejects.toThrow(PayloadTooLargeException);
+      expect(ipfsService.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('should not reach IPFS for a spoofed MIME type', async () => {
+      await expect(
+        service.uploadAvatar('user-id', {
+          buffer: createTextBuffer(),
+          originalname: 'avatar.png',
+          mimetype: 'image/png',
+        } as any),
+      ).rejects.toThrow(AVATAR_ERROR_MESSAGES.UNSUPPORTED_TYPE);
+      expect(ipfsService.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('should not reach IPFS for malformed image data', async () => {
+      await expect(
+        service.uploadAvatar('user-id', {
+          buffer: createMalformedPngBuffer(),
+          originalname: 'avatar.png',
+          mimetype: 'image/png',
+        } as any),
+      ).rejects.toThrow(AVATAR_ERROR_MESSAGES.MALFORMED_FILE);
+      expect(ipfsService.uploadFile).not.toHaveBeenCalled();
     });
   });
 
