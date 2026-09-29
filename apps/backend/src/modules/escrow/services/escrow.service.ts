@@ -6,6 +6,7 @@ import {
   ConflictException,
   UnprocessableEntityException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
@@ -45,6 +46,7 @@ import { IpfsService } from '../../ipfs/ipfs.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 import { NotificationService } from '../../../notifications/notifications.service';
 import { NotificationEventType } from '../../../notifications/enums/notification-event.enum';
+import { EventsGateway } from '../../../gateways/events.gateway';
 import {
   assertAmountConservation,
   decimalToBaseUnits,
@@ -75,6 +77,7 @@ export class EscrowService {
     private readonly webhookService: WebhookService,
     private readonly ipfsService: IpfsService,
     private readonly notificationService: NotificationService,
+    @Optional() private readonly eventsGateway?: EventsGateway,
   ) {}
 
   /**
@@ -1520,7 +1523,9 @@ export class EscrowService {
       ipAddress,
     });
 
-    return this.eventRepository.save(event);
+    const savedEvent = await this.eventRepository.save(event);
+    this.eventsGateway?.emitEscrowEvent(savedEvent);
+    return savedEvent;
   }
 
   async isUserAdmin(userId: string): Promise<boolean> {

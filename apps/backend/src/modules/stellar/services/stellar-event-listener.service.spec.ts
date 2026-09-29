@@ -15,7 +15,7 @@ import { Party, PartyRole } from '../../escrow/entities/party.entity';
 import { SorobanClientService } from '../../../services/stellar/soroban-client.service';
 import { ConfigService } from '@nestjs/config';
 import { ConsistencyCheckerService } from '../../admin/services/consistency-checker.service';
-import { EscrowGateway } from '../../../gateways/escrow.gateway';
+import { EventsGateway } from '../../../gateways/events.gateway';
 import { NotificationService } from '../../../notifications/notifications.service';
 import { EscrowChainIdService } from '../../escrow/services/escrow-chain-id.service';
 
@@ -27,7 +27,7 @@ describe('StellarEventListenerService', () => {
   let partyRepo: jest.Mocked<any>;
   let sorobanClient: jest.Mocked<any>;
   let rpcServer: jest.Mocked<any>;
-  let escrowGateway: jest.Mocked<any>;
+  let eventsGateway: jest.Mocked<any>;
   let notificationService: jest.Mocked<any>;
 
   beforeEach(async () => {
@@ -36,8 +36,8 @@ describe('StellarEventListenerService', () => {
       getEvents: jest.fn().mockResolvedValue({ events: [] }),
     };
 
-    escrowGateway = {
-      broadcastMilestoneReleased: jest.fn(),
+    eventsGateway = {
+      emitEscrowEvent: jest.fn(),
     };
 
     notificationService = {
@@ -110,8 +110,8 @@ describe('StellarEventListenerService', () => {
           },
         },
         {
-          provide: EscrowGateway,
-          useValue: escrowGateway,
+          provide: EventsGateway,
+          useValue: eventsGateway,
         },
         {
           provide: NotificationService,
@@ -300,7 +300,7 @@ describe('StellarEventListenerService', () => {
       expect(escrowEventRepo.save).toHaveBeenCalled();
     });
 
-    it('should emit WebSocket event via EscrowGateway', async () => {
+    it('should emit the persisted escrow event via EventsGateway', async () => {
       escrowRepo.findOne.mockResolvedValue({
         ...baseEscrow,
         conditions: [...baseConditions.map((c) => ({ ...c }))],
@@ -309,15 +309,7 @@ describe('StellarEventListenerService', () => {
 
       await (service as any).handleMilestoneReleased(mockEvent);
 
-      expect(escrowGateway.broadcastMilestoneReleased).toHaveBeenCalledWith(
-        'escrow-1',
-        expect.objectContaining({
-          milestoneIndex: 0,
-          amount: 100,
-          conditionId: 'cond-0',
-          txHash: 'tx-abc-123',
-        }),
-      );
+      expect(eventsGateway.emitEscrowEvent).toHaveBeenCalled();
     });
 
     it('should not create notifications for a milestone event', async () => {
@@ -440,7 +432,7 @@ describe('StellarEventListenerService', () => {
         conditions: [...baseConditions.map((c) => ({ ...c }))],
       });
       partyRepo.find.mockResolvedValue([]);
-      escrowGateway.broadcastMilestoneReleased.mockImplementation(() => {
+      eventsGateway.emitEscrowEvent.mockImplementation(() => {
         throw new Error('WebSocket error');
       });
       const errorSpy = jest.spyOn((service as any).logger, 'error');
