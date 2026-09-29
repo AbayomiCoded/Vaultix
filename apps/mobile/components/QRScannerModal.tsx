@@ -87,16 +87,19 @@ export default function QRScannerModal({
 
   if (permission && !permission.granted) {
     return (
-      <Modal visible={visible} transparent>
+      <Modal visible={visible} transparent onRequestClose={onClose}>
         <View style={styles.permissionBackdrop}>
-          <View style={styles.permissionCard}>
-            <Text style={styles.permissionTitle}>
+          <View style={styles.permissionCard} accessibilityViewIsModal>
+            <Text style={styles.permissionTitle} accessibilityRole="header">
               Camera access denied
             </Text>
 
             <TouchableOpacity
               onPress={onClose}
               style={styles.permissionButton}
+              accessibilityRole="button"
+              accessibilityLabel="Close QR scanner"
+              accessibilityHint="Camera access was denied. Closes the scanner and returns to the previous screen"
             >
               <Text style={styles.permissionButtonText}>
                 Close
@@ -109,19 +112,17 @@ export default function QRScannerModal({
   }
 
   return (
-    <Modal visible={visible} animationType="slide">
-      <View style={styles.scannerContainer}>
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={styles.scannerContainer} accessibilityViewIsModal>
 
-        {permission?.granted && (
-          <CameraView
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={handleScan}
-            style={{ flex: 1 }}
-          />
-        )}
+        <BarCodeScanner
+          onBarCodeScanned={handleScan}
+          style={{ flex: 1 }}
+          accessibilityLabel="Camera viewfinder. Point it at a Stellar address or escrow QR code"
+        />
 
         <View style={styles.header}>
-          <Text style={styles.headerText}>
+          <Text style={styles.headerText} accessibilityRole="header">
             Scan Stellar Address or Escrow ID
           </Text>
 
@@ -137,6 +138,9 @@ export default function QRScannerModal({
           <TouchableOpacity
             onPress={onClose}
             style={styles.cancelButton}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel scanning"
+            accessibilityHint="Closes the QR scanner without scanning a code"
           >
             <Text style={styles.cancelButtonText}>
               Cancel
