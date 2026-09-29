@@ -115,9 +115,13 @@ export default function QRScannerModal({
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.scannerContainer} accessibilityViewIsModal>
 
-        <BarCodeScanner
-          onBarCodeScanned={handleScan}
-          style={{ flex: 1 }}
+        <CameraView
+          style={styles.camera}
+          facing="back"
+          barcodeScannerSettings={{
+            barcodeTypes: ['qr'],
+          }}
+          onBarcodeScanned={hasScanned ? undefined : handleScan}
           accessibilityLabel="Camera viewfinder. Point it at a Stellar address or escrow QR code"
         />
 
@@ -186,6 +190,9 @@ const styles = StyleSheet.create({
   },
   scannerContainer: {
     backgroundColor: colors.scrim,
+    flex: 1,
+  },
+  camera: {
     flex: 1,
   },
   header: {
