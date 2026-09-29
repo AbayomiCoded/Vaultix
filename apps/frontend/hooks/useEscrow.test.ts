@@ -12,6 +12,12 @@ jest.mock('socket.io-client', () => ({
     removeAllListeners: jest.fn(),
     emit: jest.fn(),
     disconnect: jest.fn(),
+    // Real sockets expose the underlying Manager here; WebSocketContext
+    // listens on it for low-level reconnect-failure notifications.
+    io: {
+      on: jest.fn(),
+      removeAllListeners: jest.fn(),
+    },
   })),
 }));
 

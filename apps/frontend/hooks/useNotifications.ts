@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { notificationService, NotificationPreference, UpdatePreferenceDto } from '@/services/notification';
 import { Notification } from '@/types/notification';
 import { useWebSocket } from '@/app/contexts/WebSocketContext';
+import { NotificationEventPayload } from '@/lib/websocket';
 import { toast } from 'sonner';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -340,7 +341,7 @@ export const useNotifications = (): UseNotificationsReturn => {
   useEffect(() => {
     if (!socket || !isConnected) return;
 
-    const handleNewNotification = (data: any) => {
+    const handleNewNotification = (data: NotificationEventPayload) => {
       console.log('Real-time notification received via WebSocket:', data);
       playNotificationSound();
 
@@ -381,10 +382,13 @@ export const useNotifications = (): UseNotificationsReturn => {
       });
     };
 
-    socket.on('notification:new', handleNewNotification);
+    // Wire name is `notification.new` (dot), matching
+    // EventsGateway.emitNotification — not the colon form used elsewhere
+    // in older docs/tickets.
+    socket.on('notification.new', handleNewNotification);
 
     return () => {
-      socket.off('notification:new', handleNewNotification);
+      socket.off('notification.new', handleNewNotification);
     };
   }, [socket, isConnected]);
 

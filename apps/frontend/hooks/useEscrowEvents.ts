@@ -1,5 +1,5 @@
 /**
- * useEscrowWebSocket
+ * useEscrowEvents
  *
  * Subscribes to real-time escrow lifecycle events from the backend gateway
  * using the documented join/leave protocol.
@@ -17,26 +17,25 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGlobalWebSocket } from "@/app/contexts/WebSocketContext";
+import {
+  EscrowEventPayload,
+  joinEscrowRoom,
+  leaveEscrowRoom,
+  storeEscrowCursor,
+} from "@/lib/websocket";
 import { toast } from "sonner";
 
-interface UseEscrowWebSocketProps {
+interface UseEscrowEventsProps {
   escrowId?: string;
   /** @deprecated — kept for callers that still pass it; ignored internally */
   isSocketConnected?: boolean;
   setSocketConnected?: (connected: boolean) => void;
 }
 
-interface GatewayEventPayload {
-  escrowId?: string;
-  message?: string;
-  payload?: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-export function useEscrowWebSocket({
+export function useEscrowEvents({
   escrowId,
   setSocketConnected,
-}: UseEscrowWebSocketProps = {}) {
+}: UseEscrowEventsProps = {}) {
   const queryClient = useQueryClient();
   const { socket, isConnected } = useGlobalWebSocket();
 
@@ -82,7 +81,7 @@ export function useEscrowWebSocket({
     };
 
     // ── Escrow status / lifecycle events ───────────────────────────────────
-    const handleEscrowUpdate = (event: GatewayEventPayload) => {
+    const handleEscrowUpdate = (event: EscrowEventPayload) => {
       toast.info(event.message || "Escrow updated.");
       const targetId = event.escrowId || escrowId;
       invalidateEscrowQueries(targetId);
@@ -97,21 +96,20 @@ export function useEscrowWebSocket({
     };
 
     // ── Milestone events ───────────────────────────────────────────────────
-    const handleMilestoneReleased = (event: GatewayEventPayload) => {
+    const handleMilestoneReleased = (event: EscrowEventPayload) => {
       toast.success(event.message || "Milestone released.");
       invalidateEscrowQueries(event.escrowId);
     };
 
     // ── Party / condition events ───────────────────────────────────────────
-    const handlePartyOrConditionEvent = (event: GatewayEventPayload) => {
+    const handlePartyOrConditionEvent = (event: EscrowEventPayload) => {
       toast.info(event.message || "Escrow updated.");
       invalidateEscrowQueries(event.escrowId);
     };
 
-    const cursorKey = escrowId ? `vaultix:events:${escrowId}` : undefined;
-    const handlePersistCursor = (event: GatewayEventPayload) => {
-      if (cursorKey && typeof event.cursor === "string") {
-        window.localStorage.setItem(cursorKey, event.cursor);
+    const handlePersistCursor = (event: EscrowEventPayload) => {
+      if (escrowId && typeof event.cursor === "string") {
+        storeEscrowCursor(escrowId, event.cursor);
       }
       invalidateEscrowQueries(event.escrowId);
     };
@@ -131,16 +129,14 @@ export function useEscrowWebSocket({
     socket.on("subscription:error", handleSubscriptionError);
 
     if (escrowId) {
-      const afterCursor = cursorKey ? window.localStorage.getItem(cursorKey) ?? undefined : undefined;
-      socket.emit("joinEscrow", { escrowId, afterCursor });
+      joinEscrowRoom(socket, escrowId);
       joinedEscrowRef.current = escrowId;
     }
 
     return () => {
       // ── Leave the escrow room on unmount / dependency change ─────────────
-      // Gateway @SubscribeMessage('leaveEscrow') also expects a plain string.
       if (joinedEscrowRef.current) {
-        socket.emit("leaveEscrow", joinedEscrowRef.current);
+        leaveEscrowRoom(socket, joinedEscrowRef.current);
         joinedEscrowRef.current = undefined;
       }
 

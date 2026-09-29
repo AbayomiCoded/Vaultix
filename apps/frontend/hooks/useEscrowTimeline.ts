@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { IEscrowEvent } from '@/types/escrow';
 import { fetchEscrowEvents } from '@/lib/escrow-api';
 import { useGlobalWebSocket } from '@/app/contexts/WebSocketContext';
+import { joinEscrowRoom, leaveEscrowRoom, storeEscrowCursor } from '@/lib/websocket';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -54,22 +55,17 @@ export function useEscrowTimeline(
   useEffect(() => {
     if (!socket || !isConnected || !escrowId) return;
 
-    socket.emit('joinEscrow', {
-      escrowId,
-      afterCursor: window.localStorage.getItem(`vaultix:events:${escrowId}`) ?? undefined,
-    });
+    joinEscrowRoom(socket, escrowId);
 
     const handleUpdate = (event?: { cursor?: string }) => {
-      if (typeof event?.cursor === 'string') {
-        window.localStorage.setItem(`vaultix:events:${escrowId}`, event.cursor);
-      }
+      storeEscrowCursor(escrowId, event?.cursor);
       void fetch();
     };
     WS_EVENT_NAMES.forEach((evt) => socket.on(evt, handleUpdate));
 
     return () => {
       WS_EVENT_NAMES.forEach((evt) => socket.off(evt, handleUpdate));
-      socket.emit('leaveEscrow', escrowId);
+      leaveEscrowRoom(socket, escrowId);
     };
   }, [socket, isConnected, escrowId, fetch]);
 

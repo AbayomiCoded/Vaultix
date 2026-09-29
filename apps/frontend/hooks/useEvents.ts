@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { IEscrowEventResponse } from '@/types/escrow';
 import { EscrowService } from '@/services/escrow';
 import { useWebSocket } from '@/app/contexts/WebSocketContext';
+import { joinEscrowRoom, leaveEscrowRoom, storeEscrowCursor } from '@/lib/websocket';
 
 interface UseEventsParams {
     escrowId?: string;
@@ -35,23 +36,17 @@ export const useEvents = (params: UseEventsParams = {}) => {
         const escrowId = params.escrowId;
         if (!escrowId || !socket || !isConnected) return;
 
-        const cursorKey = `vaultix:events:${escrowId}`;
         const handleEvent = (event: { cursor?: string }) => {
-            if (typeof event.cursor === 'string') {
-                window.localStorage.setItem(cursorKey, event.cursor);
-            }
+            storeEscrowCursor(escrowId, event.cursor);
             void queryClient.invalidateQueries({ queryKey: ['events', params] });
         };
 
         socket.on('escrow.event', handleEvent);
-        socket.emit('joinEscrow', {
-            escrowId,
-            afterCursor: window.localStorage.getItem(cursorKey) ?? undefined,
-        });
+        joinEscrowRoom(socket, escrowId);
 
         return () => {
             socket.off('escrow.event', handleEvent);
-            socket.emit('leaveEscrow', escrowId);
+            leaveEscrowRoom(socket, escrowId);
         };
     }, [params.escrowId, socket, isConnected, queryClient]);
 
