@@ -21,6 +21,10 @@ import { EmailService } from '../../../email/email.service';
 import { EmailTemplatesService } from '../../../email/email-templates.service';
 import { PreferenceService } from '../../../notifications/preference.service';
 import { validateJwtSecret } from './jwt-validation.util';
+import {
+  AvatarUploadFile,
+  validateAvatarUpload,
+} from '../utils/avatar-upload.util';
 
 // Stellar SDK types for signature verification
 interface StellarKeypair {
@@ -290,16 +294,20 @@ export class AuthService {
 
   async uploadAvatar(
     userId: string,
-    file: { buffer: Buffer; originalname: string },
+    file: AvatarUploadFile | null | undefined,
   ): Promise<User> {
+    // Validate the payload before anything leaves the process: rejected uploads
+    // must never reach the storage provider.
+    const avatar = validateAvatarUpload(file);
+
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
 
     const cid = await this.ipfsService.uploadFile(
-      file.buffer,
-      file.originalname,
+      avatar.buffer,
+      avatar.filename,
     );
     const avatarUrl = this.ipfsService.getGatewayUrl(cid);
 
