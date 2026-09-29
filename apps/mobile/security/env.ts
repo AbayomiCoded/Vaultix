@@ -1,3 +1,5 @@
+import { Alert } from 'react-native';
+
 export type Environment = 'dev' | 'testnet' | 'production';
 
 export interface EnvConfig {
@@ -116,7 +118,10 @@ export const validateEnv = (vars: EnvVars = PROCESS_ENV_VARS): string[] => {
     console.warn(message);
     if (__DEV__) {
       setTimeout(() => {
-        alert(`⚠️  Vaultix Configuration Notice\n\n${message}`);
+        // React Native has no global `alert` — it is a browser/DOM global, so
+        // calling it threw `ReferenceError: alert is not defined` in any dev
+        // build that actually had a notice to show (#783).
+        Alert.alert('⚠️  Vaultix Configuration Notice', message);
       }, 500);
     }
   }
