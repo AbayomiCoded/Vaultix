@@ -435,6 +435,7 @@ pub enum Error {
     InvalidAdminProposal = 35,
     ContractNotInitialized = 36,
     InvalidSignerConfiguration = 37,
+    ReentrantCall = 38,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
@@ -1615,6 +1616,7 @@ impl VaultixEscrow {
     }
 
     pub fn release_milestone(env: Env, escrow_id: u64, milestone_index: u32) -> Result<(), Error> {
+        enter_escrow_lock(&env, escrow_id)?;
         ensure_not_paused(&env)?;
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
@@ -1651,8 +1653,7 @@ impl VaultixEscrow {
             return Err(Error::MilestoneAlreadyReleased);
         }
 
-        let release = release_pending_milestone(&env, &mut escrow, milestone_index)?;
-        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
+        let release = release_pending_milestone(&env, escrow_id, &mut escrow, milestone_index)?;
 
         publish_event(
             &env,
@@ -1674,6 +1675,7 @@ impl VaultixEscrow {
             },
         );
 
+        exit_escrow_lock(&env, escrow_id);
         Ok(())
     }
 
@@ -1683,6 +1685,7 @@ impl VaultixEscrow {
         milestone_index: u32,
         buyer: Address,
     ) -> Result<(), Error> {
+        enter_escrow_lock(&env, escrow_id)?;
         ensure_not_paused(&env)?;
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
@@ -1713,8 +1716,7 @@ impl VaultixEscrow {
             }
         }
 
-        let release = release_pending_milestone(&env, &mut escrow, milestone_index)?;
-        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
+        let release = release_pending_milestone(&env, escrow_id, &mut escrow, milestone_index)?;
 
         publish_event(
             &env,
@@ -1737,6 +1739,7 @@ impl VaultixEscrow {
             },
         );
 
+        exit_escrow_lock(&env, escrow_id);
         Ok(())
     }
 
@@ -1822,6 +1825,7 @@ impl VaultixEscrow {
         split_winner_amount: Option<i128>,
         resolution_evidence_hash: Option<BytesN<32>>,
     ) -> Result<(), Error> {
+        enter_escrow_lock(&env, escrow_id)?;
         let arbitrator = get_arbitrator_internal(&env)?;
         arbitrator.require_auth();
 
@@ -1888,26 +1892,6 @@ impl VaultixEscrow {
             .ok_or(Error::InvalidMilestoneAmount)?;
         if total_distribution != outstanding {
             return Err(Error::InvalidMilestoneAmount);
-        }
-
-        let token_client = token::Client::new(&env, &escrow.token_address);
-
-        if amount_to_winner > 0 {
-            safe_transfer(
-                &token_client,
-                &env.current_contract_address(),
-                &winner,
-                amount_to_winner,
-            )?;
-        }
-
-        if amount_to_other > 0 {
-            safe_transfer(
-                &token_client,
-                &env.current_contract_address(),
-                &other,
-                amount_to_other,
-            )?;
         }
 
         // Update accounting and milestone statuses
@@ -1977,6 +1961,27 @@ impl VaultixEscrow {
             store_dispute_resolution_evidence(&env, escrow_id, hash, &escrow);
         }
 
+        // Interactions only after state is persisted (#728).
+        let token_client = token::Client::new(&env, &escrow.token_address);
+
+        if amount_to_winner > 0 {
+            safe_transfer(
+                &token_client,
+                &env.current_contract_address(),
+                &winner,
+                amount_to_winner,
+            )?;
+        }
+
+        if amount_to_other > 0 {
+            safe_transfer(
+                &token_client,
+                &env.current_contract_address(),
+                &other,
+                amount_to_other,
+            )?;
+        }
+
         publish_event(
             &env,
             event_topic(&env, "DisputeResolved"),
@@ -1996,10 +2001,12 @@ impl VaultixEscrow {
             },
         );
 
+        exit_escrow_lock(&env, escrow_id);
         Ok(())
     }
 
     pub fn cancel_escrow(env: Env, escrow_id: u64) -> Result<(), Error> {
+        enter_escrow_lock(&env, escrow_id)?;
         ensure_not_paused(&env)?;
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
@@ -2016,9 +2023,10 @@ impl VaultixEscrow {
 
         let mut refund_amount = 0i128;
         let mut fee_amount = 0i128;
+        let mut fee_treasury: Option<Address> = None;
+        let was_funded = escrow_status(&escrow) == EscrowStatus::Active;
 
-        if escrow_status(&escrow) == EscrowStatus::Active {
-            let token_client = token::Client::new(&env, &escrow.token_address);
+        if was_funded {
             refund_amount = if let Ok((treasury, _)) = Self::get_config(env.clone()) {
                 let fee_bps = resolve_fee_with_escrow_override(
                     &env,
@@ -2026,14 +2034,7 @@ impl VaultixEscrow {
                     escrow_fee_override_opt(&escrow),
                 )?;
                 fee_amount = calculate_fee(escrow.total_amount, fee_bps)?;
-                if fee_amount > 0 {
-                    safe_transfer(
-                        &token_client,
-                        &env.current_contract_address(),
-                        &treasury,
-                        fee_amount,
-                    )?;
-                }
+                fee_treasury = Some(treasury);
                 escrow
                     .total_amount
                     .checked_sub(fee_amount)
@@ -2041,6 +2042,25 @@ impl VaultixEscrow {
             } else {
                 escrow.total_amount
             };
+        }
+
+        // Effects: persist the cancellation before any external transfer (#728).
+        set_escrow_status(&mut escrow, EscrowStatus::Cancelled)?;
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
+
+        // Interactions
+        if was_funded {
+            let token_client = token::Client::new(&env, &escrow.token_address);
+            if let Some(treasury) = fee_treasury.as_ref() {
+                if fee_amount > 0 {
+                    safe_transfer(
+                        &token_client,
+                        &env.current_contract_address(),
+                        treasury,
+                        fee_amount,
+                    )?;
+                }
+            }
 
             if refund_amount > 0 {
                 safe_transfer(
@@ -2051,9 +2071,6 @@ impl VaultixEscrow {
                 )?;
             }
         }
-
-        set_escrow_status(&mut escrow, EscrowStatus::Cancelled)?;
-        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         publish_event(
             &env,
@@ -2073,6 +2090,7 @@ impl VaultixEscrow {
             },
         );
 
+        exit_escrow_lock(&env, escrow_id);
         Ok(())
     }
 
@@ -2110,6 +2128,7 @@ impl VaultixEscrow {
     }
 
     pub fn refund_expired(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
+        enter_escrow_lock(&env, escrow_id)?;
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
         // Validate deadline has passed
@@ -2158,6 +2177,22 @@ impl VaultixEscrow {
             .checked_sub(platform_fee)
             .ok_or(Error::InvalidMilestoneAmount)?;
 
+        // Update escrow state: mark unfunded milestones as disputed (refunded path)
+        // and transition to Expired without inflating total_released past released milestones.
+        let mut updated_milestones = Vec::new(&env);
+        for milestone in escrow.milestones.iter() {
+            let mut m = milestone.clone();
+            if m.status == MilestoneStatus::Pending {
+                m.status = MilestoneStatus::Disputed;
+            }
+            updated_milestones.push_back(m);
+        }
+        escrow.milestones = updated_milestones;
+
+        set_escrow_status(&mut escrow, EscrowStatus::Expired)?;
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
+
+        // Interactions only after state is persisted (#728).
         // Get token client for escrow's token address
         let token_client = token::Client::new(&env, &escrow.token_address);
 
@@ -2179,21 +2214,6 @@ impl VaultixEscrow {
             )?;
         }
 
-        // Update escrow state: mark unfunded milestones as disputed (refunded path)
-        // and transition to Expired without inflating total_released past released milestones.
-        let mut updated_milestones = Vec::new(&env);
-        for milestone in escrow.milestones.iter() {
-            let mut m = milestone.clone();
-            if m.status == MilestoneStatus::Pending {
-                m.status = MilestoneStatus::Disputed;
-            }
-            updated_milestones.push_back(m);
-        }
-        escrow.milestones = updated_milestones;
-
-        set_escrow_status(&mut escrow, EscrowStatus::Expired)?;
-        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
-
         publish_event(
             &env,
             event_topic(&env, "EscrowExpiredRefunded"),
@@ -2211,6 +2231,7 @@ impl VaultixEscrow {
             },
         );
 
+        exit_escrow_lock(&env, escrow_id);
         Ok(())
     }
 }
@@ -2221,6 +2242,29 @@ fn get_storage_key_legacy(escrow_id: u64) -> (Symbol, u64) {
 
 /// Generates storage key for escrow version markers.
 /// This companion key is stored alongside the V2 escrow entry for explicit versioning.
+fn get_escrow_lock_key(escrow_id: u64) -> (Symbol, u64) {
+    (symbol_short!("esclock"), escrow_id)
+}
+
+/// Per-escrow re-entrancy guard (#728), defense-in-depth on top of
+/// checks-effects-interactions. Held in temporary storage for the duration of
+/// a fund-moving call. On any `Err` the invocation's storage writes roll back,
+/// so the lock can never be left stuck.
+fn enter_escrow_lock(env: &Env, escrow_id: u64) -> Result<(), Error> {
+    let key = get_escrow_lock_key(escrow_id);
+    if env.storage().temporary().has(&key) {
+        return Err(Error::ReentrantCall);
+    }
+    env.storage().temporary().set(&key, &true);
+    Ok(())
+}
+
+fn exit_escrow_lock(env: &Env, escrow_id: u64) {
+    env.storage()
+        .temporary()
+        .remove(&get_escrow_lock_key(escrow_id));
+}
+
 fn get_escrow_version_key(escrow_id: u64) -> (Symbol, u64) {
     (symbol_short!("escver"), escrow_id)
 }
@@ -2502,8 +2546,11 @@ fn resolve_fee_with_escrow_override(
     Ok(global_fee)
 }
 
+/// Releases a milestone following checks-effects-interactions: the escrow is
+/// mutated and persisted before any external token transfer (#728).
 fn release_pending_milestone(
     env: &Env,
+    escrow_id: u64,
     escrow: &mut EscrowEntryV2,
     milestone_index: u32,
 ) -> Result<ReleaseOutcome, Error> {
@@ -2531,6 +2578,18 @@ fn release_pending_milestone(
         .checked_sub(fee_amount)
         .ok_or(Error::InvalidMilestoneAmount)?;
 
+    // Effects
+    milestone.status = MilestoneStatus::Released;
+    escrow.milestones.set(milestone_index, milestone.clone());
+
+    escrow.total_released = escrow
+        .total_released
+        .checked_add(milestone.amount)
+        .ok_or(Error::InvalidMilestoneAmount)?;
+
+    store_escrow_entry_v2(env, escrow_id, escrow)?;
+
+    // Interactions
     let token_client = token::Client::new(env, &escrow.token_address);
     safe_transfer(
         &token_client,
@@ -2547,14 +2606,6 @@ fn release_pending_milestone(
             fee_amount,
         )?;
     }
-
-    milestone.status = MilestoneStatus::Released;
-    escrow.milestones.set(milestone_index, milestone.clone());
-
-    escrow.total_released = escrow
-        .total_released
-        .checked_add(milestone.amount)
-        .ok_or(Error::InvalidMilestoneAmount)?;
 
     Ok(ReleaseOutcome {
         milestone_amount: milestone.amount,
