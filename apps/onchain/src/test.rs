@@ -3546,6 +3546,134 @@ fn test_collect_signature_rejects_unapproved_signer() {
     assert!(ok_result.is_ok());
 }
 
+// --- Issue #734: collect_signature status guard ---
+
+/// Creates escrow 1 with multisig configured (threshold above the milestone so
+/// releases need only the depositor) and returns (client, token, depositor,
+/// recipient, signer).
+fn setup_multisig_escrow<'a>(
+    env: &Env,
+) -> (
+    VaultixEscrowClient<'a>,
+    token::Client<'a>,
+    Address,
+    Address,
+    Address,
+) {
+    env.mock_all_auths();
+    let admin = Address::generate(env);
+    let treasury = Address::generate(env);
+    let (client, contract_id) = create_test_contract(env, &admin, &treasury, Some(0));
+
+    let depositor = Address::generate(env);
+    let recipient = Address::generate(env);
+    let signer = Address::generate(env);
+    let (token_client, token_admin, token_address) = create_token_contract(env, &admin);
+    token_admin.mint(&depositor, &5000);
+
+    client.create_escrow(
+        &1u64,
+        &depositor,
+        &recipient,
+        &token_address,
+        &vec![
+            env,
+            Milestone {
+                amount: 5000,
+                status: MilestoneStatus::Pending,
+                description: symbol_short!("Task"),
+            },
+        ],
+        &(env.ledger().timestamp() + 3600),
+        &valid_metadata_hash(env),
+    );
+    client.configure_multisig(
+        &1u64,
+        &10_000,
+        &1,
+        &vec![env, depositor.clone(), signer.clone()],
+    );
+    token_client.approve(&depositor, &contract_id, &5000, &200);
+
+    (client, token_client, depositor, recipient, signer)
+}
+
+/// Asserts collect_signature is rejected, records nothing, and emits no
+/// SignatureCollected event.
+fn assert_collect_signature_rejected(env: &Env, client: &VaultixEscrowClient, signer: &Address) {
+    let before = client.get_escrow(&1u64).collected_signatures.len();
+
+    let result = client.try_collect_signature(&1u64, signer);
+    assert_eq!(result, Err(Ok(Error::InvalidEscrowStatus)));
+
+    let signature_collected = Symbol::new(env, "SignatureCollected");
+    for (_, topics, _) in all_events(env).iter() {
+        let is_signature_event = topics.iter().any(|t| {
+            <Symbol as soroban_sdk::TryFromVal<Env, Val>>::try_from_val(env, &t).ok()
+                == Some(signature_collected.clone())
+        });
+        assert!(
+            !is_signature_event,
+            "SignatureCollected emitted for rejected call"
+        );
+    }
+
+    assert_eq!(client.get_escrow(&1u64).collected_signatures.len(), before);
+}
+
+#[test]
+fn test_collect_signature_allowed_on_created_and_active() {
+    let env = Env::default();
+    let (client, _token, depositor, _recipient, signer) = setup_multisig_escrow(&env);
+
+    client.collect_signature(&1u64, &depositor); // Created
+    client.deposit_funds(&1u64);
+    client.collect_signature(&1u64, &signer); // Active
+    assert_eq!(client.get_escrow(&1u64).collected_signatures.len(), 2);
+}
+
+#[test]
+fn test_collect_signature_rejected_on_completed_escrow() {
+    let env = Env::default();
+    let (client, _token, _depositor, _recipient, signer) = setup_multisig_escrow(&env);
+    client.deposit_funds(&1u64);
+    client.release_milestone(&1u64, &0);
+    client.complete_escrow(&1u64);
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Completed);
+
+    assert_collect_signature_rejected(&env, &client, &signer);
+}
+
+#[test]
+fn test_collect_signature_rejected_on_cancelled_resolved_expired_disputed() {
+    // Cancelled
+    let env = Env::default();
+    let (client, _token, _depositor, _recipient, signer) = setup_multisig_escrow(&env);
+    client.cancel_escrow(&1u64);
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Cancelled);
+    assert_collect_signature_rejected(&env, &client, &signer);
+
+    // Disputed, then Resolved
+    let env = Env::default();
+    let (client, _token, depositor, recipient, signer) = setup_multisig_escrow(&env);
+    client.deposit_funds(&1u64);
+    client.raise_dispute(&1u64, &depositor, &valid_evidence_hash(&env));
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Disputed);
+    assert_collect_signature_rejected(&env, &client, &signer);
+    client.resolve_dispute(&1u64, &recipient, &None, &None);
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Resolved);
+    assert_collect_signature_rejected(&env, &client, &signer);
+
+    // Expired
+    let env = Env::default();
+    let (client, _token, depositor, _recipient, signer) = setup_multisig_escrow(&env);
+    client.deposit_funds(&1u64);
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.refund_expired(&1u64, &depositor);
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Expired);
+    assert_collect_signature_rejected(&env, &client, &signer);
+}
+
 #[test]
 fn test_configure_multisig_validation_errors() {
     let env = Env::default();
