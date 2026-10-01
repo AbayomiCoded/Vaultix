@@ -451,6 +451,9 @@ const MAX_BATCH_SIZE: u32 = 20;
 /// Minimum number of seconds a deadline must be in the future at creation time.
 /// Prevents escrows that expire within the same ledger or within a trivially short window.
 const MIN_DEADLINE_LEAD_SECS: u64 = 60;
+/// Maximum escrow lifetime (#729): bounds how far in the future a deadline may
+/// be set, keeping TTL/storage costs and `refund_expired` semantics sane.
+const MAX_DEADLINE_HORIZON_SECS: u64 = 5 * 365 * 24 * 60 * 60; // ~5 years
 const ESCROW_ENTRY_STORAGE_VERSION: i128 = 2;
 const EVENT_NAMESPACE: &str = "Vaultix";
 const EVENT_SCHEMA_VERSION: &str = "v1";
@@ -1151,11 +1154,9 @@ impl VaultixEscrow {
             return Err(Error::SelfDealing);
         }
 
-        // Deadline must be strictly in the future with minimum lead time (#623)
-        let now = env.ledger().timestamp();
-        if deadline <= now.saturating_add(MIN_DEADLINE_LEAD_SECS) {
-            return Err(Error::InvalidDeadline);
-        }
+        // Deadline must be in the future with minimum lead time (#623) and
+        // within the maximum horizon (#729).
+        validate_deadline(&env, deadline)?;
 
         validate_hash(&metadata_hash)?;
 
@@ -1243,8 +1244,6 @@ impl VaultixEscrow {
             return Err(Error::VectorTooLarge);
         }
 
-        let now = env.ledger().timestamp();
-
         let mut created_items: Vec<EscrowCreatedBatchEventItem> = Vec::new(&env);
         let mut pending_entries: Vec<(u64, EscrowEntryV2, bool)> = Vec::new(&env);
         let mut escrow_ids: Vec<u64> = Vec::new(&env);
@@ -1263,10 +1262,9 @@ impl VaultixEscrow {
                 return Err(Error::SelfDealing);
             }
 
-            // Deadline must be strictly in the future with minimum lead time (#623)
-            if deadline <= now.saturating_add(MIN_DEADLINE_LEAD_SECS) {
-                return Err(Error::InvalidDeadline);
-            }
+            // Deadline must be in the future with minimum lead time (#623) and
+            // within the maximum horizon (#729).
+            validate_deadline(&env, deadline)?;
 
             validate_hash(&metadata_hash)?;
 
@@ -2630,6 +2628,19 @@ fn safe_transfer(
         return Err(Error::InsufficientBalance);
     }
     token_client.transfer(from, to, &amount);
+    Ok(())
+}
+
+/// Rejects `deadline == 0`, past/current deadlines, deadlines inside the
+/// minimum lead time, and deadlines beyond the maximum horizon.
+fn validate_deadline(env: &Env, deadline: u64) -> Result<(), Error> {
+    let now = env.ledger().timestamp();
+    if deadline <= now.saturating_add(MIN_DEADLINE_LEAD_SECS) {
+        return Err(Error::InvalidDeadline);
+    }
+    if deadline > now.saturating_add(MAX_DEADLINE_HORIZON_SECS) {
+        return Err(Error::InvalidDeadline);
+    }
     Ok(())
 }
 
