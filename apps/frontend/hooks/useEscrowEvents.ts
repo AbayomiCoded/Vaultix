@@ -1,50 +1,41 @@
 /**
- * useEscrowWebSocket
+ * useEscrowEvents
  *
  * Subscribes to real-time escrow lifecycle events from the backend gateway
  * using the documented join/leave protocol.
  *
- * Protocol (see apps/backend/src/gateways/escrow.gateway.ts):
- *   - Join room:  emit `joinEscrow`  with a plain escrowId string
+ * Protocol (see apps/backend/src/gateways/events.gateway.ts):
+ *   - Join room:  emit `joinEscrow` with an escrowId and optional resume cursor
  *   - Leave room: emit `leaveEscrow` with a plain escrowId string
  *   - Join ack:   server emits `joinedEscrow` with { escrowId }
- *   - Subscription rejected: server emits `error` with { message }
+ *   - Subscription rejected: server emits `subscription:error` with { message }
  *
- * Server-emitted lifecycle events (all arrive with { escrowId, ...data, timestamp }):
- *   escrow:status_changed, escrow:funded, escrow:completed, escrow:cancelled,
- *   escrow:dispute_filed, escrow:dispute_resolved,
- *   escrow:milestone_released, escrow:party_joined,
- *   escrow:condition_fulfilled, escrow:condition_confirmed
+ * Server-emitted lifecycle events arrive with event data, cursor, and timestamp.
  *
- * Fixes #663 — previously the hook emitted `escrow:join`/`escrow:leave` with
- * `{ id }` objects, which the gateway never handled (it expects `joinEscrow`/
- * `leaveEscrow` with a plain string). Milestone and condition events were also
- * never subscribed to. Reconnect handling and post-auth identity refresh are
- * included.
+ * Reconnect handling and post-auth identity refresh are included.
  */
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useGlobalWebSocket } from "@/app/contexts/WebSocketContext";
+import {
+  EscrowEventPayload,
+  joinEscrowRoom,
+  leaveEscrowRoom,
+  storeEscrowCursor,
+} from "@/lib/websocket";
 import { toast } from "sonner";
 
-interface UseEscrowWebSocketProps {
+interface UseEscrowEventsProps {
   escrowId?: string;
   /** @deprecated — kept for callers that still pass it; ignored internally */
   isSocketConnected?: boolean;
   setSocketConnected?: (connected: boolean) => void;
 }
 
-interface GatewayEventPayload {
-  escrowId?: string;
-  message?: string;
-  payload?: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-export function useEscrowWebSocket({
+export function useEscrowEvents({
   escrowId,
   setSocketConnected,
-}: UseEscrowWebSocketProps = {}) {
+}: UseEscrowEventsProps = {}) {
   const queryClient = useQueryClient();
   const { socket, isConnected } = useGlobalWebSocket();
 
@@ -73,14 +64,7 @@ export function useEscrowWebSocket({
     if (!socket || !isConnected) return;
 
     // ── Join the escrow room using the documented protocol ─────────────────
-    // Gateway @SubscribeMessage('joinEscrow') expects a plain string escrowId,
-    // NOT an object like { id }.  The old `escrow:join` event was never handled
-    // by the gateway at all.
-    if (escrowId) {
-      socket.emit("joinEscrow", escrowId);
-      joinedEscrowRef.current = escrowId;
-    }
-
+    // Register listeners before joining so replayed events are observed.
     // ── Subscription rejection handler ─────────────────────────────────────
     const handleSubscriptionError = (err: { message?: string }) => {
       toast.error(err.message || "Subscription to escrow updates was rejected.");
@@ -97,7 +81,7 @@ export function useEscrowWebSocket({
     };
 
     // ── Escrow status / lifecycle events ───────────────────────────────────
-    const handleEscrowUpdate = (event: GatewayEventPayload) => {
+    const handleEscrowUpdate = (event: EscrowEventPayload) => {
       toast.info(event.message || "Escrow updated.");
       const targetId = event.escrowId || escrowId;
       invalidateEscrowQueries(targetId);
@@ -112,49 +96,62 @@ export function useEscrowWebSocket({
     };
 
     // ── Milestone events ───────────────────────────────────────────────────
-    const handleMilestoneReleased = (event: GatewayEventPayload) => {
+    const handleMilestoneReleased = (event: EscrowEventPayload) => {
       toast.success(event.message || "Milestone released.");
       invalidateEscrowQueries(event.escrowId);
     };
 
     // ── Party / condition events ───────────────────────────────────────────
-    const handlePartyOrConditionEvent = (event: GatewayEventPayload) => {
+    const handlePartyOrConditionEvent = (event: EscrowEventPayload) => {
       toast.info(event.message || "Escrow updated.");
       invalidateEscrowQueries(event.escrowId);
     };
 
+    const handlePersistCursor = (event: EscrowEventPayload) => {
+      if (escrowId && typeof event.cursor === "string") {
+        storeEscrowCursor(escrowId, event.cursor);
+      }
+      invalidateEscrowQueries(event.escrowId);
+    };
+
     // Register all lifecycle events emitted by the gateway
-    socket.on("escrow:status_changed",    handleEscrowUpdate);
-    socket.on("escrow:funded",            handleEscrowUpdate);
-    socket.on("escrow:completed",         handleEscrowUpdate);
-    socket.on("escrow:cancelled",         handleEscrowUpdate);
-    socket.on("escrow:dispute_filed",     handleEscrowUpdate);
-    socket.on("escrow:dispute_resolved",  handleEscrowUpdate);
-    socket.on("escrow:milestone_released",handleMilestoneReleased);
-    socket.on("escrow:party_joined",      handlePartyOrConditionEvent);
-    socket.on("escrow:condition_fulfilled",handlePartyOrConditionEvent);
-    socket.on("escrow:condition_confirmed",handlePartyOrConditionEvent);
-    socket.on("error",                    handleSubscriptionError);
+    socket.on("escrow.event", handlePersistCursor);
+    socket.on("escrow.status_changed", handleEscrowUpdate);
+    socket.on("escrow.funded", handleEscrowUpdate);
+    socket.on("escrow.completed", handleEscrowUpdate);
+    socket.on("escrow.cancelled", handleEscrowUpdate);
+    socket.on("escrow.dispute_filed", handleEscrowUpdate);
+    socket.on("escrow.dispute_resolved", handleEscrowUpdate);
+    socket.on("escrow.milestone_released", handleMilestoneReleased);
+    socket.on("escrow.party_joined", handlePartyOrConditionEvent);
+    socket.on("escrow.condition_fulfilled", handlePartyOrConditionEvent);
+    socket.on("escrow.condition_confirmed", handlePartyOrConditionEvent);
+    socket.on("subscription:error", handleSubscriptionError);
+
+    if (escrowId) {
+      joinEscrowRoom(socket, escrowId);
+      joinedEscrowRef.current = escrowId;
+    }
 
     return () => {
       // ── Leave the escrow room on unmount / dependency change ─────────────
-      // Gateway @SubscribeMessage('leaveEscrow') also expects a plain string.
       if (joinedEscrowRef.current) {
-        socket.emit("leaveEscrow", joinedEscrowRef.current);
+        leaveEscrowRoom(socket, joinedEscrowRef.current);
         joinedEscrowRef.current = undefined;
       }
 
-      socket.off("escrow:status_changed",    handleEscrowUpdate);
-      socket.off("escrow:funded",            handleEscrowUpdate);
-      socket.off("escrow:completed",         handleEscrowUpdate);
-      socket.off("escrow:cancelled",         handleEscrowUpdate);
-      socket.off("escrow:dispute_filed",     handleEscrowUpdate);
-      socket.off("escrow:dispute_resolved",  handleEscrowUpdate);
-      socket.off("escrow:milestone_released",handleMilestoneReleased);
-      socket.off("escrow:party_joined",      handlePartyOrConditionEvent);
-      socket.off("escrow:condition_fulfilled",handlePartyOrConditionEvent);
-      socket.off("escrow:condition_confirmed",handlePartyOrConditionEvent);
-      socket.off("error",                    handleSubscriptionError);
+      socket.off("escrow.event", handlePersistCursor);
+      socket.off("escrow.status_changed", handleEscrowUpdate);
+      socket.off("escrow.funded", handleEscrowUpdate);
+      socket.off("escrow.completed", handleEscrowUpdate);
+      socket.off("escrow.cancelled", handleEscrowUpdate);
+      socket.off("escrow.dispute_filed", handleEscrowUpdate);
+      socket.off("escrow.dispute_resolved", handleEscrowUpdate);
+      socket.off("escrow.milestone_released", handleMilestoneReleased);
+      socket.off("escrow.party_joined", handlePartyOrConditionEvent);
+      socket.off("escrow.condition_fulfilled", handlePartyOrConditionEvent);
+      socket.off("escrow.condition_confirmed", handlePartyOrConditionEvent);
+      socket.off("subscription:error", handleSubscriptionError);
     };
   }, [socket, isConnected, escrowId, queryClient]);
 

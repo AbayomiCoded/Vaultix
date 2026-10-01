@@ -256,7 +256,13 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Seed Management</Text>
           <View style={styles.card}>
             {!seedVisible ? (
-              <TouchableOpacity style={styles.primaryBtn} onPress={handleRevealSeed}>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={handleRevealSeed}
+                accessibilityRole="button"
+                accessibilityLabel="Reveal secret seed"
+                accessibilityHint="Asks for biometric authentication, then shows your wallet's secret seed"
+              >
                 <Text style={styles.primaryBtnText}>Reveal Secret Seed</Text>
               </TouchableOpacity>
             ) : (
@@ -268,7 +274,12 @@ export default function SettingsScreen() {
                   <Text style={styles.seedValue} selectable>{seedValue}</Text>
                 </View>
                 <CopyButton value={seedValue ?? ''} label="Copy Seed" toastMessage="Seed copied" />
-                <TouchableOpacity onPress={() => { setSeedVisible(false); setSeedValue(null); }} style={styles.secondaryBtn}>
+                <TouchableOpacity
+                  onPress={() => { setSeedVisible(false); setSeedValue(null); }}
+                  style={styles.secondaryBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Hide secret seed"
+                >
                   <Text style={styles.secondaryBtnText}>Hide Seed</Text>
                 </TouchableOpacity>
               </View>
@@ -285,15 +296,28 @@ export default function SettingsScreen() {
               placeholderTextColor={colors.textTertiary}
               autoCapitalize="none"
               secureTextEntry
+              accessibilityLabel="Stellar secret seed to import"
             />
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleImportWallet}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleImportWallet}
+              accessibilityRole="button"
+              accessibilityLabel="Import wallet"
+              accessibilityHint="Replaces your current wallet with the one from the entered secret seed"
+            >
               <Text style={styles.primaryBtnText}>Import</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.sectionTitle}>Danger Zone</Text>
           <View style={styles.card}>
-            <TouchableOpacity style={styles.dangerBtn} onPress={handleRemoveWallet}>
+            <TouchableOpacity
+              style={styles.dangerBtn}
+              onPress={handleRemoveWallet}
+              accessibilityRole="button"
+              accessibilityLabel="Remove wallet"
+              accessibilityHint="Permanently removes this wallet from the device after confirmation"
+            >
               <Text style={styles.dangerBtnText}>Remove Wallet</Text>
             </TouchableOpacity>
           </View>
@@ -316,29 +340,16 @@ export default function SettingsScreen() {
             value={isEnabled}
             onValueChange={handleToggle}
             disabled={!isSupported || !isEnrolled}
-            accessibilityLabel="Toggle biometric app lock"
-            trackColor={{ false: colors.border, true: colors.infoStrong }}
-            thumbColor={isEnabled ? colors.text : colors.textSecondary}
-          />
-        </View>
-
-        {/* #762 — re-auth is meaningful only while the app lock is on. */}
-        <View style={[styles.settingRow, styles.settingRowSpaced]}>
-          <View style={styles.settingText}>
-            <Text style={styles.settingTitle}>Confirm Sensitive Actions</Text>
-            <Text style={styles.settingDescription}>
-              {!isEnabled
-                ? 'Turn on the biometric app lock to require confirmation before releasing funds or creating an escrow.'
-                : 'Ask for FaceID/TouchID again before releasing a milestone or creating an escrow.'}
-            </Text>
-          </View>
-          <Switch
-            value={reauthRequired && isEnabled}
-            onValueChange={handleReauthToggle}
-            disabled={!isSupported || !isEnrolled || !isEnabled}
-            accessibilityLabel="Toggle biometric confirmation for sensitive actions"
-            trackColor={{ false: colors.border, true: colors.infoStrong }}
-            thumbColor={reauthRequired && isEnabled ? colors.text : colors.textSecondary}
+            accessibilityRole="switch"
+            accessibilityLabel="Biometric app lock"
+            accessibilityHint={
+              !isSupported || !isEnrolled
+                ? 'Unavailable. Set up Face ID, Touch ID or fingerprint on this device first'
+                : 'Requires Face ID, Touch ID or fingerprint when opening Vaultix'
+            }
+            accessibilityState={{ checked: isEnabled, disabled: !isSupported || !isEnrolled }}
+            trackColor={{ false: '#334155', true: '#3B82F6' }}
+            thumbColor={isEnabled ? '#ffffff' : '#94A3B8'}
           />
         </View>
       </View>

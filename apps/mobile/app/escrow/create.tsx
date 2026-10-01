@@ -3,7 +3,7 @@
  * Steps: 1) Parties  2) Milestones  3) Deadline  4) Review & Submit
  * Validates: milestone totals == total amount, 1-10 milestones, deadline in future
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,8 +22,9 @@ import { toFriendlyError } from '../../utils/errors';
 import { requireAuth } from '../../services/auth';
 import { useBiometricLock } from '../../hooks/useBiometricLock';
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { getLocalWalletAddress } from '../../services/wallet';
-import { colors } from '../../theme';
+import { getLocalWalletAddress, signTransactionXDR } from '../../services/wallet';
+import { PrepareEscrowCreationPayload } from '../../types/escrow';
+import { uuidv4 } from '../../utils/uuid';
 
 const MAX_MILESTONES = 10;
 const MIN_MILESTONES = 1;
@@ -93,8 +94,7 @@ export default function CreateEscrowScreen() {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [submitting, setSubmitting] = useState(false);
-  // #762 — escrow creation locks funds, so it needs a fresh biometric check.
-  const { reauthenticate, isReauthing } = useBiometricLock();
+  const attemptRef = useRef<{ key: string; intentId: string; signedXdr?: string } | null>(null);
 
   useEffect(() => {
     requireAuth(router, { pathname: '/escrow/create' });
@@ -190,6 +190,11 @@ export default function CreateEscrowScreen() {
     if (valid) setStep((s) => s + 1);
   };
 
+  /**
+   * #709 — wallet-signed creation: the backend prepares the Soroban
+   * `create_escrow` envelope, the built-in wallet signs it on-device via
+   * `signTransactionXDR`, and the backend broadcasts it and waits for settlement.
+   */
   const handleSubmit = async () => {
     // #762 — abort before *any* state change if the prompt is cancelled or the
     // biometric check fails, so a cancelled escrow creation leaves nothing behind.
@@ -210,21 +215,39 @@ export default function CreateEscrowScreen() {
 
     setSubmitting(true);
     try {
-      const created = await escrowApi.create({
-        title: form.title,
+      const payload: Omit<PrepareEscrowCreationPayload, 'intentId'> = {
+        title: form.title.trim(),
         description: form.description,
-        counterpartyAddress: form.counterpartyAddress,
+        category: 'milestone',
+        counterpartyAddress: form.counterpartyAddress.trim(),
         amount: form.totalAmount,
         asset: form.asset,
         deadline: new Date(form.deadline).toISOString(),
         milestones: form.milestones.map((m) => ({
-          title: m.title,
+          // The contract only stores a milestone description; fall back to its title.
+          description: m.description.trim() || m.title.trim(),
           amount: m.amount,
-          description: m.description,
         })),
-      });
+        conditions: [],
+      };
+
+      // An intent is bound to its exact payload server-side. Reuse it (and any
+      // envelope already signed for it) on retry; start fresh once edited.
+      const key = JSON.stringify(payload);
+      if (attemptRef.current?.key !== key) {
+        attemptRef.current = { key, intentId: uuidv4() };
+      }
+      const attempt = attemptRef.current;
+
+      if (!attempt.signedXdr) {
+        const intent = await escrowApi.prepareCreation({ intentId: attempt.intentId, ...payload });
+        attempt.signedXdr = await signTransactionXDR(intent.unsignedXdr);
+      }
+      const created = await escrowApi.submitCreation(attempt.intentId, attempt.signedXdr);
+      attemptRef.current = null;
+
       Alert.alert('Success', 'Escrow created!', [
-        { text: 'View', onPress: () => router.replace({ pathname: '/escrow/[id]', params: { id: created.id } }) },
+        { text: 'View', onPress: () => router.replace({ pathname: '/escrow/[id]', params: { id: created.escrowId } }) },
         { text: 'Dashboard', onPress: () => router.replace('/(tabs)/dashboard') },
       ]);
     } catch (err) {

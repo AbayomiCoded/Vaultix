@@ -35,10 +35,10 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
       animationType="fade"
       onRequestClose={forceUpdate ? () => {} : onDismiss}
     >
-      <View style={styles.container}>
-        <Text style={styles.icon}>🛡️</Text>
+      <View style={styles.container} accessibilityViewIsModal>
+        <Text style={styles.icon} importantForAccessibility="no" accessibilityElementsHidden>🛡️</Text>
 
-        <Text style={styles.title}>
+        <Text style={styles.title} accessibilityRole="header">
           {forceUpdate ? 'Update Required' : 'Update Available'}
         </Text>
 
@@ -48,12 +48,28 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
             : `Version ${latestVersion} of Vaultix is now available. Update for the latest features and security fixes.`}
         </Text>
 
-        <TouchableOpacity style={styles.updateButton} onPress={handleUpdate}>
+        <TouchableOpacity
+          style={styles.updateButton}
+          onPress={handleUpdate}
+          accessibilityRole="button"
+          accessibilityLabel={`Update Vaultix to version ${latestVersion}`}
+          accessibilityHint={
+            forceUpdate
+              ? 'Opens the app store. This update is required to keep using Vaultix'
+              : 'Opens the app store to install the update'
+          }
+        >
           <Text style={styles.updateButtonText}>Update Now</Text>
         </TouchableOpacity>
 
         {!forceUpdate && (
-          <TouchableOpacity style={styles.laterButton} onPress={onDismiss}>
+          <TouchableOpacity
+            style={styles.laterButton}
+            onPress={onDismiss}
+            accessibilityRole="button"
+            accessibilityLabel="Update later"
+            accessibilityHint="Dismisses this prompt and continues to Vaultix"
+          >
             <Text style={styles.laterButtonText}>Later</Text>
           </TouchableOpacity>
         )}

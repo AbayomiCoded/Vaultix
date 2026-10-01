@@ -1,27 +1,61 @@
+import { Alert } from 'react-native';
+
 export type Environment = 'dev' | 'testnet' | 'production';
 
 export interface EnvConfig {
   environment: Environment;
   apiUrl: string;
+  rpcUrl: string;
+  /** Stellar network passphrase transactions are signed against (#709). */
+  networkPassphrase: string;
 }
 
-/*
- * No rpcUrl here on purpose: the mobile client only builds keypairs and signs
- * XDR locally (services/wallet.ts). The backend talks to Soroban RPC and
- * submits transactions, so the app never needs an RPC endpoint of its own.
- */
+const ENV: Environment = (process.env.EXPO_PUBLIC_APP_ENV as Environment) || 'dev';
+
+const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
+const PUBLIC_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
+
+const configs: Record<Environment, EnvConfig> = {
+  dev: {
+    environment: 'dev',
+    apiUrl: process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000',
+    rpcUrl: process.env.EXPO_PUBLIC_RPC_URL || 'http://localhost:8000/soroban/rpc',
+    networkPassphrase: process.env.EXPO_PUBLIC_NETWORK_PASSPHRASE || TESTNET_PASSPHRASE,
+  },
+  testnet: {
+    environment: 'testnet',
+    apiUrl: process.env.EXPO_PUBLIC_API_URL || 'https://api-testnet.vaultix.com',
+    rpcUrl: process.env.EXPO_PUBLIC_RPC_URL || 'https://soroban-testnet.stellar.org',
+    networkPassphrase: process.env.EXPO_PUBLIC_NETWORK_PASSPHRASE || TESTNET_PASSPHRASE,
+  },
+  production: {
+    environment: 'production',
+    apiUrl: process.env.EXPO_PUBLIC_API_URL || 'https://api.vaultix.com',
+    rpcUrl: process.env.EXPO_PUBLIC_RPC_URL || 'https://rpc.vaultix.com',
+    networkPassphrase: process.env.EXPO_PUBLIC_NETWORK_PASSPHRASE || PUBLIC_PASSPHRASE,
+  },
+};
+
+export const envConfig = configs[ENV];
+
 const DEFAULTS: Record<Environment, EnvConfig> = {
   dev: {
     environment: 'dev',
     apiUrl: 'http://localhost:3000',
+    rpcUrl: 'http://localhost:8000/soroban/rpc',
+    networkPassphrase: TESTNET_PASSPHRASE,
   },
   testnet: {
     environment: 'testnet',
     apiUrl: 'https://api-testnet.vaultix.com',
+    rpcUrl: 'https://soroban-testnet.stellar.org',
+    networkPassphrase: TESTNET_PASSPHRASE,
   },
   production: {
     environment: 'production',
     apiUrl: 'https://api.vaultix.com',
+    rpcUrl: 'https://rpc.vaultix.com',
+    networkPassphrase: PUBLIC_PASSPHRASE,
   },
 };
 
@@ -84,7 +118,10 @@ export const validateEnv = (vars: EnvVars = PROCESS_ENV_VARS): string[] => {
     console.warn(message);
     if (__DEV__) {
       setTimeout(() => {
-        alert(`⚠️  Vaultix Configuration Notice\n\n${message}`);
+        // React Native has no global `alert` — it is a browser/DOM global, so
+        // calling it threw `ReferenceError: alert is not defined` in any dev
+        // build that actually had a notice to show (#783).
+        Alert.alert('⚠️  Vaultix Configuration Notice', message);
       }, 500);
     }
   }
