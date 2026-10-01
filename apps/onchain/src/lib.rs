@@ -2029,7 +2029,8 @@ impl VaultixEscrow {
                     &escrow.token_address,
                     escrow_fee_override_opt(&escrow),
                 )?;
-                fee_amount = calculate_fee(escrow.total_amount, fee_bps)?;
+                fee_amount =
+                    calculate_incremental_fee(escrow.total_released, escrow.total_amount, fee_bps)?;
                 if fee_amount > 0 {
                     safe_transfer(
                         &token_client,
@@ -2154,8 +2155,10 @@ impl VaultixEscrow {
             escrow_fee_override_opt(&escrow),
         )?;
 
-        // Calculate platform fee using checked arithmetic
-        let platform_fee = calculate_fee(remaining_balance, fee_bps)?;
+        // Fee on the escrow-total basis: releases already paid fee(total_released),
+        // so the refund pays the rest, making the total fee equal fee(total_amount).
+        let platform_fee =
+            calculate_incremental_fee(escrow.total_released, remaining_balance, fee_bps)?;
 
         // Calculate refund amount
         let refund_amount = remaining_balance
@@ -2529,7 +2532,7 @@ fn release_pending_milestone(
         &escrow.token_address,
         escrow_fee_override_opt(escrow),
     )?;
-    let fee_amount = calculate_fee(milestone.amount, fee_bps)?;
+    let fee_amount = calculate_incremental_fee(escrow.total_released, milestone.amount, fee_bps)?;
     let payout_amount = milestone
         .amount
         .checked_sub(fee_amount)
@@ -2726,6 +2729,32 @@ fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
         .ok_or(Error::InvalidMilestoneAmount)?;
 
     Ok(fee)
+}
+
+/// Fee owed when `amount` moves out of an escrow that has already settled
+/// `settled_before` units of its total.
+///
+/// Fee basis: the platform fee is defined once against the escrow total, i.e.
+/// `calculate_fee(total_amount, fee_bps)`. Each settlement (milestone release,
+/// cancel, expired refund) charges the cumulative difference
+/// `fee(settled_before + amount) - fee(settled_before)`, so the fees collected
+/// over any sequence of settlements telescope to exactly `fee(total_amount)`
+/// (at constant `fee_bps`). Splitting a project into more, smaller milestones
+/// therefore cannot reduce the total fee via floor rounding.
+///
+/// With `fee_bps` in `0..=BPS_DENOMINATOR` the result is in `0..=amount`, so
+/// payouts never go negative.
+fn calculate_incremental_fee(
+    settled_before: i128,
+    amount: i128,
+    fee_bps: i128,
+) -> Result<i128, Error> {
+    let settled_after = settled_before
+        .checked_add(amount)
+        .ok_or(Error::InvalidMilestoneAmount)?;
+    calculate_fee(settled_after, fee_bps)?
+        .checked_sub(calculate_fee(settled_before, fee_bps)?)
+        .ok_or(Error::InvalidMilestoneAmount)
 }
 
 fn get_operator_internal(env: &Env) -> Result<Address, Error> {
