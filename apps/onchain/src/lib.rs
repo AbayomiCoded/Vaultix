@@ -1837,6 +1837,11 @@ impl VaultixEscrow {
         if winner != escrow.depositor && winner != escrow.recipient {
             return Err(Error::InvalidWinner);
         }
+        // Never-funded escrows hold no tokens of their own; resolving one would
+        // pay out other escrows' pooled balance (#620, #727).
+        if escrow.funded_amount <= 0 {
+            return Err(Error::InvalidEscrowStatus);
+        }
 
         // Cap the distributable amount at the actual funded balance (#620).
         // This prevents resolve_dispute from spending other escrows' pooled funds
