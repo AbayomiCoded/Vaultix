@@ -4963,6 +4963,34 @@ fn test_list_escrows_page_size_limit() {
 }
 
 #[test]
+fn test_list_escrows_huge_page_returns_overflow_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let depositor = Address::generate(&env);
+
+    // page * page_size overflows u32
+    let result =
+        client.try_list_escrows_by_party(&depositor, &symbol_short!("depositor"), &u32::MAX, &2u32);
+    assert_eq!(result, Err(Ok(Error::ArithmeticOverflow)));
+
+    // page * page_size fits, but start_idx + page_size overflows u32
+    let result = client.try_list_escrows_by_party(
+        &depositor,
+        &symbol_short!("depositor"),
+        &(u32::MAX / 100),
+        &100u32,
+    );
+    assert_eq!(result, Err(Ok(Error::ArithmeticOverflow)));
+}
+
+#[test]
 fn test_list_escrows_invalid_role() {
     let env = Env::default();
     env.mock_all_auths();
