@@ -1502,7 +1502,9 @@ fn test_admin_resolves_dispute_to_recipient() {
         .iter()
         .all(|m| m.status == MilestoneStatus::Released));
 
-    assert_eq!(token_client.balance(&recipient), 10000);
+    // 50 bps platform fee on the 10_000 outstanding (#735)
+    assert_eq!(token_client.balance(&recipient), 9950);
+    assert_eq!(token_client.balance(&treasury), 50);
     assert_eq!(token_client.balance(&contract_id), 0);
     assert_eq!(token_client.balance(&depositor), 0);
 }
@@ -1565,7 +1567,9 @@ fn test_admin_resolves_dispute_to_depositor() {
         .iter()
         .all(|m| m.status == MilestoneStatus::Disputed));
 
-    assert_eq!(token_client.balance(&depositor), 5000);
+    // 50 bps platform fee on the 5_000 outstanding (#735)
+    assert_eq!(token_client.balance(&depositor), 4975);
+    assert_eq!(token_client.balance(&treasury), 25);
     assert_eq!(token_client.balance(&contract_id), 0);
     assert_eq!(token_client.balance(&recipient), 0);
 }
@@ -1854,6 +1858,10 @@ fn test_resolve_dispute_records_resolution_evidence() {
     let payload: DisputeResolvedEvent = event.2.into_val(&env);
     assert_eq!(payload.resolution_evidence_hash, Some(resolution_hash));
     assert_eq!(payload.escrow_id, escrow_id);
+    // 50 bps on 3_000 (#735): event reports the fee and net payouts.
+    assert_eq!(payload.fee_amount, 15);
+    assert_eq!(payload.winner_amount, 2985);
+    assert_eq!(payload.other_amount, 0);
 }
 
 /// `None` resolution evidence stays a zero-friction path: resolution succeeds,
@@ -2125,8 +2133,10 @@ fn test_resolve_dispute_split_recipient_wins() {
     // total_released tracks recipient payments only
     assert_eq!(escrow.total_released, 2000);
 
-    assert_eq!(token_client.balance(&recipient), 2000);
-    assert_eq!(token_client.balance(&depositor), 1000);
+    // fee(3000) = 15 at 50 bps: winner bears fee(2000) = 10, other bears 5 (#735)
+    assert_eq!(token_client.balance(&recipient), 1990);
+    assert_eq!(token_client.balance(&depositor), 995);
+    assert_eq!(token_client.balance(&treasury), 15);
     assert_eq!(token_client.balance(&contract_id), 0);
 }
 
@@ -2181,8 +2191,10 @@ fn test_resolve_dispute_split_depositor_wins() {
     // total_released tracks recipient payments; recipient got the "other" share
     assert_eq!(escrow.total_released, 1000);
 
-    assert_eq!(token_client.balance(&depositor), 2000);
-    assert_eq!(token_client.balance(&recipient), 1000);
+    // fee(3000) = 15 at 50 bps: winner bears fee(2000) = 10, other bears 5 (#735)
+    assert_eq!(token_client.balance(&depositor), 1990);
+    assert_eq!(token_client.balance(&recipient), 995);
+    assert_eq!(token_client.balance(&treasury), 15);
     assert_eq!(token_client.balance(&contract_id), 0);
 }
 
