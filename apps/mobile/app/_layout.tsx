@@ -17,7 +17,6 @@ import { MobileLockScreen } from '../components/MobileLockScreen';
 import { UpdatePromptModal } from '../components/UpdatePromptModal';
 import { colors } from '../theme';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { colors } from '../theme';
 
 export default function RootLayout() {
   const {

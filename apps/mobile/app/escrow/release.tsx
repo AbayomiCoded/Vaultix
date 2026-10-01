@@ -1,6 +1,10 @@
 /**
  * #317 – Mobile Release Milestone + Transaction Status Tracking
  * Features: trigger release, show tx lifecycle (submitting/submitted/confirmed/failed), retry on failure
+ *
+ * #709: release is executed by the backend, which returns only a tx hash, so
+ * there is no envelope for the device wallet to sign yet. See the tracking note
+ * on `escrowApi.releaseMilestone` for the switch to `signTransactionXDR`.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {

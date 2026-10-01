@@ -1,5 +1,5 @@
 import { TypeOrmHealthIndicator } from '@nestjs/terminus';
-import { EscrowGateway } from '../../gateways/escrow.gateway';
+import { EventsGateway } from '../../gateways/events.gateway';
 import { Controller, Get, Logger, VERSION_NEUTRAL } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -81,7 +81,7 @@ export class HealthController {
     private health: HealthCheckService,
     private readonly typeOrmHealthIndicator: TypeOrmHealthIndicator,
     private readonly stellarService: StellarService,
-    private readonly escrowGateway: EscrowGateway,
+    private readonly eventsGateway: EventsGateway,
     private readonly emailService: EmailService,
     private readonly ipfsProviderService: IpfsProviderService,
     private readonly configService: ConfigService,
@@ -298,7 +298,7 @@ export class HealthController {
   }
 
   private probeWebSocket(): DependencyHealth {
-    return { status: this.escrowGateway.isHealthy() ? 'up' : 'down' };
+    return { status: this.eventsGateway.isHealthy() ? 'up' : 'down' };
   }
 
   private async probeEmail(): Promise<DependencyHealth> {
@@ -364,7 +364,7 @@ export class HealthController {
   }
 
   private checkWebSocket(): HealthIndicatorResult {
-    const healthy = this.escrowGateway.isHealthy();
+    const healthy = this.eventsGateway.isHealthy();
     const result: HealthIndicatorResult = {
       websocket: { status: healthy ? 'up' : 'down' },
     };

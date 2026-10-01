@@ -5,6 +5,7 @@ use super::*;
 use soroban_sdk::{
     testutils::{
         Address as _, AuthorizedFunction, AuthorizedInvocation, EnvTestConfig, Events, Ledger,
+        MockAuth, MockAuthInvoke,
     },
     token, vec, Address, Env, IntoVal, Val,
 };
@@ -3675,6 +3676,224 @@ fn test_release_above_threshold_requires_depositor_auth() {
             .status,
         MilestoneStatus::Released
     );
+}
+
+#[test]
+fn test_rogue_signer_cannot_authorize_above_threshold_release() {
+    let env = Env::default();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let approved_signer = Address::generate(&env);
+    let rogue_signer = Address::generate(&env);
+    let escrow_id = 404u64;
+
+    let (_token_client, _token_admin, token_address) = create_token_contract(&env, &admin);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    let deadline = env.ledger().timestamp() + 3600;
+
+    client
+        .mock_auths(&[MockAuth {
+            address: &depositor,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "create_escrow",
+                args: (
+                    escrow_id,
+                    depositor.clone(),
+                    recipient.clone(),
+                    token_address.clone(),
+                    milestones.clone(),
+                    deadline,
+                    valid_metadata_hash(&env),
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &deadline,
+            &valid_metadata_hash(&env),
+        );
+
+    let signers = vec![&env, depositor.clone(), approved_signer.clone()];
+
+    client
+        .mock_auths(&[MockAuth {
+            address: &depositor,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "configure_multisig",
+                args: (escrow_id, 3000i128, 2u32, signers.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .configure_multisig(&escrow_id, &3000, &2, &signers);
+
+    // An unaffiliated address may authenticate itself, but it is not an
+    // approved signer and therefore cannot contribute a multisig signature.
+    let rogue_collect = client
+        .mock_auths(&[MockAuth {
+            address: &rogue_signer,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "collect_signature",
+                args: (escrow_id, rogue_signer.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_collect_signature(&escrow_id, &rogue_signer);
+
+    assert_eq!(rogue_collect, Err(Ok(Error::UnauthorizedAccess)));
+
+    // Valid approved signers can still satisfy the multisig requirement.
+    client
+        .mock_auths(&[MockAuth {
+            address: &depositor,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "collect_signature",
+                args: (escrow_id, depositor.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .collect_signature(&escrow_id, &depositor);
+
+    client
+        .mock_auths(&[MockAuth {
+            address: &approved_signer,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "collect_signature",
+                args: (escrow_id, approved_signer.clone()).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .collect_signature(&escrow_id, &approved_signer);
+
+    // A rogue caller still cannot release an above-threshold milestone,
+    // even after the required approved signatures have been collected.
+    let rogue_release = client
+        .mock_auths(&[MockAuth {
+            address: &rogue_signer,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "release_milestone",
+                args: (escrow_id, 0u32).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_release_milestone(&escrow_id, &0);
+
+    assert!(
+        rogue_release.is_err(),
+        "rogue release unexpectedly succeeded"
+    );
+}
+
+#[test]
+fn test_release_and_confirm_delivery_enforce_equivalent_authorization() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let signer = Address::generate(&env);
+
+    let release_escrow_id = 405u64;
+    let confirm_escrow_id = 406u64;
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &20000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    let deadline = env.ledger().timestamp() + 3600;
+    let signers = vec![&env, depositor.clone(), signer.clone()];
+
+    // Both escrows use the same milestone amount, threshold, and signer policy.
+    client.create_escrow(
+        &release_escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &deadline,
+        &valid_metadata_hash(&env),
+    );
+    client.configure_multisig(&release_escrow_id, &3000, &2, &signers);
+
+    client.create_escrow(
+        &confirm_escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &deadline,
+        &valid_metadata_hash(&env),
+    );
+    client.configure_multisig(&confirm_escrow_id, &3000, &2, &signers);
+
+    // Fund both otherwise-identical escrows.
+    token_client.approve(&depositor, &contract_id, &20000, &200);
+    client.deposit_funds(&release_escrow_id);
+    client.deposit_funds(&confirm_escrow_id);
+
+    // Satisfy the same above-threshold multisig requirement on both escrows.
+    client.collect_signature(&release_escrow_id, &depositor);
+    client.collect_signature(&release_escrow_id, &signer);
+
+    client.collect_signature(&confirm_escrow_id, &depositor);
+    client.collect_signature(&confirm_escrow_id, &signer);
+
+    // release_milestone must authorize the depositor.
+    client.release_milestone(&release_escrow_id, &0);
+    let release_auths = env.auths();
+
+    assert_eq!(release_auths.len(), 1);
+    assert_eq!(release_auths[0].0, depositor);
+
+    // confirm_delivery must enforce the equivalent depositor/buyer authorization.
+    client.confirm_delivery(&confirm_escrow_id, &0, &depositor);
+    let confirm_auths = env.auths();
+
+    assert_eq!(confirm_auths.len(), 1);
+    assert_eq!(confirm_auths[0].0, depositor);
 }
 
 // --- Issue #620: Unfunded Escrow Dispute & Resolution Protection ---
