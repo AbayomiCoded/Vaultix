@@ -5110,6 +5110,51 @@ fn test_list_escrows_spans_multiple_index_chunks() {
     }
 }
 
+/// Issue #733: create_escrow's storage footprint is O(1) in the party's
+/// history. Appending the 2nd id and the 202nd id land at the same offset of
+/// their chunk (0 and 2), so the bytes read/written must be identical.
+#[test]
+fn test_create_escrow_index_cost_independent_of_history() {
+    let env = index_test_env();
+    let (client, token_address, milestones) = setup_index_test(&env);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let create = |id: u64| {
+        client.create_escrow(
+            &id,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &1706400000u64,
+            &valid_metadata_hash(&env),
+        );
+    };
+
+    create(1);
+    create(2); // index position 1 in chunk 0
+    let early = env.cost_estimate().resources();
+
+    for id in 3..=201 {
+        create(id);
+    }
+    create(202); // index position 201 = position 1 in chunk 2
+    let late = env.cost_estimate().resources();
+
+    // Storage footprint only; CPU/memory are not asserted because the test
+    // host's cost grows with total ledger size, independent of this party.
+    assert!(early.write_bytes > 0);
+    assert_eq!(late.memory_read_entries, early.memory_read_entries);
+    assert_eq!(late.write_entries, early.write_entries);
+    assert_eq!(late.write_bytes, early.write_bytes);
+    assert_eq!(
+        late.persistent_rent_ledger_bytes,
+        early.persistent_rent_ledger_bytes
+    );
+}
+
 #[test]
 fn test_list_escrows_pagination_across_chunk_boundary() {
     let env = index_test_env();
