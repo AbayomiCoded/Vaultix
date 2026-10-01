@@ -444,6 +444,60 @@ fn test_accept_admin_requires_pending_admin_auth() {
     assert_eq!(client.get_pending_admin(), None);
 }
 
+/// Issue #730: an unrelated address cannot hijack a pending admin proposal.
+#[test]
+fn test_accept_admin_rejects_unrelated_address() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+
+    // Only the attacker signs accept_admin.
+    let attacker = Address::generate(&env);
+    let result = client
+        .mock_auths(&[MockAuth {
+            address: &attacker,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "accept_admin",
+                args: ().into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_accept_admin();
+    assert!(result.is_err());
+
+    // Nothing changed: the current admin stays, the proposal is still pending
+    // for the intended address only.
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(
+        client.get_pending_admin().map(|p| p.new_admin),
+        Some(replacement_admin.clone())
+    );
+
+    // The intended address can still complete the handshake.
+    client
+        .mock_auths(&[MockAuth {
+            address: &replacement_admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "accept_admin",
+                args: ().into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .accept_admin();
+    assert_eq!(client.get_admin(), replacement_admin);
+    assert_ne!(client.get_admin(), attacker);
+}
+
 #[test]
 fn test_cancel_admin_proposal_withdraws_pending() {
     let env = Env::default();
