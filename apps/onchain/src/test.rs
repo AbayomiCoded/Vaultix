@@ -1864,6 +1864,118 @@ fn test_resolve_dispute_records_resolution_evidence() {
     assert_eq!(payload.other_amount, 0);
 }
 
+/// Issue #736: an indexer that only consumes events can reconstruct the final
+/// milestone states after a dispute resolution, without reading storage.
+#[test]
+fn test_dispute_resolution_events_reconstruct_milestone_states() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &12_000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("M1"),
+        },
+        Milestone {
+            amount: 2000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("M2"),
+        },
+        Milestone {
+            amount: 3000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("M3"),
+        },
+    ];
+    for escrow_id in [1u64, 2u64] {
+        client.create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &1706400000u64,
+            &valid_metadata_hash(&env),
+        );
+        token_client.approve(&depositor, &contract_id, &6000, &200);
+        client.deposit_funds(&escrow_id);
+    }
+
+    let resolved_topic: soroban_sdk::Vec<Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "v1"),
+        Symbol::new(&env, "DisputeResolved"),
+    )
+        .into_val(&env);
+    let resolved_payload = |env: &Env| -> DisputeResolvedEvent {
+        let events = all_events(env);
+        let event = events
+            .iter()
+            .find(|e| e.0 == contract_id && e.1 == resolved_topic)
+            .expect("DisputeResolved event emitted");
+        event.2.into_val(env)
+    };
+
+    // Escrow 1: milestone 0 released normally, then full recipient win.
+    client.release_milestone(&1u64, &0);
+    client.raise_dispute(&1u64, &recipient, &valid_evidence_hash(&env));
+    client.resolve_dispute(&1u64, &recipient, &None, &None);
+    let payload = resolved_payload(&env);
+
+    // Event alone: every milestone is now Released, including those flipped
+    // by the dispute path that never emitted MilestoneReleased.
+    let expected = vec![
+        &env,
+        MilestoneStatus::Released,
+        MilestoneStatus::Released,
+        MilestoneStatus::Released,
+    ];
+    assert_eq!(payload.resolution, Resolution::Recipient);
+    assert_eq!(payload.milestone_statuses, expected);
+    // Cross-check only: event-derived state matches storage.
+    let stored: soroban_sdk::Vec<MilestoneStatus> = {
+        let mut v = soroban_sdk::Vec::new(&env);
+        for m in client.get_escrow(&1u64).milestones.iter() {
+            v.push_back(m.status);
+        }
+        v
+    };
+    assert_eq!(payload.milestone_statuses, stored);
+
+    // Escrow 2: split resolution leaves unreleased milestones Disputed.
+    client.raise_dispute(&2u64, &depositor, &valid_evidence_hash(&env));
+    client.resolve_dispute(&2u64, &recipient, &Some(4000), &None);
+    let payload = resolved_payload(&env);
+    assert_eq!(payload.resolution, Resolution::Split);
+    assert_eq!(
+        payload.milestone_statuses,
+        vec![
+            &env,
+            MilestoneStatus::Disputed,
+            MilestoneStatus::Disputed,
+            MilestoneStatus::Disputed,
+        ]
+    );
+    let mut stored = soroban_sdk::Vec::new(&env);
+    for m in client.get_escrow(&2u64).milestones.iter() {
+        stored.push_back(m.status);
+    }
+    assert_eq!(payload.milestone_statuses, stored);
+}
+
 /// `None` resolution evidence stays a zero-friction path: resolution succeeds,
 /// nothing is stored, and the event reports the absence explicitly.
 #[test]
