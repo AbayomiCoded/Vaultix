@@ -896,6 +896,11 @@ impl VaultixEscrow {
         Self::propose_admin(env, new_admin)
     }
 
+    /// Single-step by design (#730 scope decision): unlike the admin role, a
+    /// mistyped or compromised operator address is recoverable, because the admin
+    /// can immediately call this setter again. Only the admin role needs the
+    /// two-step `propose_admin` / `accept_admin` handshake, since a wrong admin
+    /// would lock out every role setter (and `upgrade`) irrecoverably.
     pub fn set_operator(env: Env, new_operator: Address) -> Result<(), Error> {
         let admin = get_admin_internal(&env)?;
         admin.require_auth();
@@ -913,6 +918,11 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    /// Single-step by design (#730 scope decision): unlike the admin role, a
+    /// mistyped or compromised arbitrator address is recoverable, because the admin
+    /// can immediately call this setter again. Only the admin role needs the
+    /// two-step `propose_admin` / `accept_admin` handshake, since a wrong admin
+    /// would lock out every role setter (and `upgrade`) irrecoverably.
     pub fn set_arbitrator(env: Env, new_arbitrator: Address) -> Result<(), Error> {
         let admin = get_admin_internal(&env)?;
         admin.require_auth();
@@ -936,6 +946,11 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    /// Single-step by design (#730 scope decision): unlike the admin role, a
+    /// mistyped or compromised treasury address is recoverable, because the admin
+    /// can immediately call this setter again. Only the admin role needs the
+    /// two-step `propose_admin` / `accept_admin` handshake, since a wrong admin
+    /// would lock out every role setter (and `upgrade`) irrecoverably.
     pub fn set_treasury(env: Env, new_treasury: Address) -> Result<(), Error> {
         let admin = get_admin_internal(&env)?;
         admin.require_auth();
