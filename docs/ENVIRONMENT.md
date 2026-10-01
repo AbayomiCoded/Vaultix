@@ -30,6 +30,24 @@ These values must be kept in sync. Drift will cause silent failures (CORS errors
 
 ---
 
+## Duplicate / conflicting variables
+
+More than one variable name has been used for the same concept across the
+codebase's history. To prevent drift, each pair below records the **canonical**
+name that new code must use; the non-canonical name is documented only so it is
+recognised and removed on sight, never reintroduced.
+
+| Concept | Variants seen | Canonical | Status | Tracking |
+|---|---|---|---|---|
+| Mobile API base URL | `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_API_BASE_URL` | **`EXPO_PUBLIC_API_URL`** | `EXPO_PUBLIC_API_BASE_URL` is **not read** by any current source file (`services/api.ts` resolves the URL through `security/env.ts` → `envConfig.apiUrl`, which reads only `EXPO_PUBLIC_API_URL`). Do not add `EXPO_PUBLIC_API_BASE_URL`. | [#707](https://github.com/StayLitCodes/Vaultix/issues/707) |
+| Frontend API base URL | `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_API_URL` | **`NEXT_PUBLIC_API_BASE_URL`** | `NEXT_PUBLIC_API_URL` still appears on the evidence-upload path in `escrow-api.ts` and should be consolidated onto the canonical name. | [#707](https://github.com/StayLitCodes/Vaultix/issues/707) |
+
+> The mobile duplication (`EXPO_PUBLIC_API_BASE_URL` vs `EXPO_PUBLIC_API_URL`)
+> is the specific case tracked as a code fix in [#707](https://github.com/StayLitCodes/Vaultix/issues/707);
+> this table is the reference that keeps the same mistake from recurring elsewhere.
+
+---
+
 ## Backend (`apps/backend`)
 
 ### Database

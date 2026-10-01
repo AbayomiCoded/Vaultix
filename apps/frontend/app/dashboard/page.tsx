@@ -13,7 +13,7 @@ import { useEscrows } from "../../hooks/useEscrows";
 import ActivityFeed from "@/components/common/ActivityFeed";
 import Link from "next/link";
 import { PlusCircle, Activity, X } from "lucide-react";
-import { useEscrowWebSocket } from "@/hooks/useEscrowWebSocket";
+import { useEscrowEvents } from "@/hooks/useEscrowEvents";
 import { EscrowCardSkeleton } from "@/components/ui/EscrowCardSkeleton";
 import { ActivityFeedSkeleton } from "@/components/ui/ActivityFeedSkeleton";
 import {
@@ -28,7 +28,7 @@ function DashboardContent() {
   const pathname = usePathname();
   const [showActivity, setShowActivity] = useState(false);
 
-  useEscrowWebSocket();
+  useEscrowEvents();
 
   // Status filters are held canonically and translated to the backend wire
   // value only when the query is issued. Unknown values are dropped so a

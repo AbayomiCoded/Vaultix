@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ import CacheTimestamp from '../../components/CacheTimestamp';
 import { cacheEscrowDetail, getCachedEscrowDetail } from '../../services/cache/escrowCache';
 import { CopyButton } from '../../components/CopyButton';
 import { ShareButton, buildEscrowShareUrl } from '../../components/ShareButton';
+import { EscrowQRCode } from '../../components/EscrowQRCode';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { toFriendlyError, isOfflineError } from '../../utils/errors';
 import { useDisputes } from '../../hooks/useDisputes';
@@ -145,6 +147,7 @@ export default function EscrowDetailScreen() {
   const [error, setError] = useState<{ title: string; message: string } | null>(null);
   const { isOffline, markOffline, markOnline } = useNetworkStatus();
   const [isDisputeModalVisible, setDisputeModalVisible] = useState(false);
+  const [isQrVisible, setQrVisible] = useState(false);
   const { dispute, raiseDispute, hasActiveDispute, isSubmitting } = useDisputes(id);
   const [isStale, setIsStale] = useState(false);
   const [cacheUpdatedAt, setCacheUpdatedAt] = useState<number>();
@@ -242,7 +245,37 @@ export default function EscrowDetailScreen() {
       <View style={styles.shareRow}>
         <CopyButton value={escrow.id} label="Copy Escrow ID" toastMessage="Escrow ID copied!" variant="ghost" />
         <ShareButton url={buildEscrowShareUrl(escrow.id)} label="Share Escrow" variant="primary" />
+        <TouchableOpacity
+          style={styles.qrButton}
+          onPress={() => setQrVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Show escrow QR code"
+        >
+          <Text style={styles.qrButtonText}>QR</Text>
+        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={isQrVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setQrVisible(false)}
+      >
+        <View style={styles.qrBackdrop}>
+          <View style={styles.qrCard}>
+            <Text style={styles.qrTitle}>Share Escrow QR</Text>
+            <EscrowQRCode escrowId={escrow.id} />
+            <TouchableOpacity
+              style={styles.qrCloseButton}
+              onPress={() => setQrVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close escrow QR code"
+            >
+              <Text style={styles.qrCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.metaRow}>
         <View style={styles.metaItem}>

@@ -36,7 +36,7 @@ import { Party } from '../../escrow/entities/party.entity';
 import { SorobanClientService } from '../../../services/stellar/soroban-client.service';
 import { ConsistencyCheckerService } from '../../admin/services/consistency-checker.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
-import { EscrowGateway } from '../../../gateways/escrow.gateway';
+import { EventsGateway } from '../../../gateways/events.gateway';
 import { EscrowChainIdService } from '../../escrow/services/escrow-chain-id.service';
 
 @Injectable()
@@ -69,7 +69,7 @@ export class StellarEventListenerService
     @Inject(forwardRef(() => ConsistencyCheckerService))
     private consistencyChecker: ConsistencyCheckerService,
     private chainIds: EscrowChainIdService,
-    @Optional() private escrowGateway?: EscrowGateway,
+    @Optional() private eventsGateway?: EventsGateway,
   ) {}
 
   async onModuleInit() {
@@ -714,7 +714,7 @@ export class StellarEventListenerService
         ledger: event.ledger,
       },
     });
-    await this.escrowEventRepository.save(escrowEvent);
+    const savedEvent = await this.escrowEventRepository.save(escrowEvent);
 
     this.logger.log(
       `Milestone ${milestoneIndex} released for escrow ${event.escrowId}: ` +
@@ -723,14 +723,7 @@ export class StellarEventListenerService
 
     // 7. Emit WebSocket event to escrow room
     try {
-      this.escrowGateway?.broadcastMilestoneReleased(escrow.id, {
-        milestoneIndex,
-        amount: releaseAmount,
-        conditionId: condition.id,
-        txHash: event.txHash,
-        releasedAmount: escrow.releasedAmount,
-        totalAmount: Number(escrow.amount),
-      });
+      this.eventsGateway?.emitEscrowEvent(savedEvent);
     } catch (wsError) {
       this.logger.error(
         'Failed to broadcast milestone released WebSocket event',

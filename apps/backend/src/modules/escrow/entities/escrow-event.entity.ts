@@ -31,6 +31,7 @@ export enum EscrowEventType {
 }
 
 @Entity('escrow_events')
+@Index('idx_escrow_events_escrow_id', ['escrowId'])
 export class EscrowEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;
