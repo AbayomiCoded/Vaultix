@@ -435,6 +435,7 @@ pub enum Error {
     InvalidAdminProposal = 35,
     ContractNotInitialized = 36,
     InvalidSignerConfiguration = 37,
+    ArithmeticOverflow = 38,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
@@ -1577,8 +1578,16 @@ impl VaultixEscrow {
         let total = party_index_total(&env, index_role, &party);
 
         // Calculate pagination bounds
-        let start_idx = page.saturating_mul(page_size);
-        let end_idx = core::cmp::min(start_idx.saturating_add(page_size), total);
+        // Checked: `page` is caller-controlled and unbounded.
+        let start_idx = page
+            .checked_mul(page_size)
+            .ok_or(Error::ArithmeticOverflow)?;
+        let end_idx = core::cmp::min(
+            start_idx
+                .checked_add(page_size)
+                .ok_or(Error::ArithmeticOverflow)?,
+            total,
+        );
 
         if start_idx >= total {
             // Page is out of bounds, return empty result
