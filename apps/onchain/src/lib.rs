@@ -2918,8 +2918,22 @@ fn store_escrow_entry_v2(env: &Env, escrow_id: u64, escrow: &EscrowEntryV2) -> R
     validate_escrow_invariants(escrow)?;
     let key = get_storage_key_v2(escrow_id);
     env.storage().persistent().set(&key, escrow);
-    set_escrow_entry_version(env, escrow_id, ESCROW_ENTRY_STORAGE_VERSION);
     extend_escrow_ttl(env, &key, escrow);
+
+    // The version marker only changes on creation or migration; skip the
+    // redundant write (and its TTL bump) once it is already current.
+    let version_key = get_escrow_version_key(escrow_id);
+    let stored_version = env
+        .storage()
+        .persistent()
+        .get::<(Symbol, u64), i128>(&version_key);
+    if stored_version != Some(ESCROW_ENTRY_STORAGE_VERSION) {
+        env.storage()
+            .persistent()
+            .set(&version_key, &ESCROW_ENTRY_STORAGE_VERSION);
+        // Written together with the main entry, so keep both TTLs in sync.
+        extend_escrow_ttl(env, &version_key, escrow);
+    }
     Ok(())
 }
 
