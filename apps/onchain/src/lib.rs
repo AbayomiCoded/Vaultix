@@ -346,6 +346,12 @@ pub struct DisputeResolvedEvent {
     /// Platform fee sent to the treasury (#735).
     pub fee_amount: i128,
     pub resolution: Resolution,
+    /// Final status of every milestone after resolution, indexed like
+    /// `Escrow::milestones` (#736). Resolution can flip milestones to
+    /// `Released` (full recipient win) or `Disputed` without a per-milestone
+    /// `MilestoneReleased` event, so this is the itemized source of truth an
+    /// indexer must apply for this transition. Bounded by the 20-milestone cap.
+    pub milestone_statuses: Vec<MilestoneStatus>,
     /// Raw sha2-256 digest of the arbitrator's resolution evidence, or `None`
     /// when the arbitrator ruled without publishing a supporting document.
     pub resolution_evidence_hash: Option<BytesN<32>>,
@@ -2019,6 +2025,11 @@ impl VaultixEscrow {
             store_dispute_resolution_evidence(&env, escrow_id, hash, &escrow);
         }
 
+        let mut milestone_statuses: Vec<MilestoneStatus> = Vec::new(&env);
+        for milestone in escrow.milestones.iter() {
+            milestone_statuses.push_back(milestone.status);
+        }
+
         publish_event(
             &env,
             event_topic(&env, "DisputeResolved"),
@@ -2030,6 +2041,7 @@ impl VaultixEscrow {
                 other_amount: net_to_other,
                 fee_amount,
                 resolution,
+                milestone_statuses,
                 resolution_evidence_hash,
                 status: escrow_status(&escrow),
                 total_amount: escrow.total_amount,
