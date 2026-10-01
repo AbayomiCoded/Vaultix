@@ -339,8 +339,12 @@ pub struct DisputeResolvedEvent {
     pub escrow_id: u64,
     pub winner: Address,
     pub other_party: Address,
+    /// Net amount transferred to the winner (after its share of the fee).
     pub winner_amount: i128,
+    /// Net amount transferred to the other party (after its share of the fee).
     pub other_amount: i128,
+    /// Platform fee sent to the treasury (#735).
+    pub fee_amount: i128,
     pub resolution: Resolution,
     /// Raw sha2-256 digest of the arbitrator's resolution evidence, or `None`
     /// when the arbitrator ruled without publishing a supporting document.
@@ -1893,23 +1897,58 @@ impl VaultixEscrow {
             return Err(Error::InvalidMilestoneAmount);
         }
 
+        // Platform fee (#735): same escrow > token > global precedence as the
+        // other payout paths, charged once on the distributed outstanding amount
+        // so the total equals what cancel/refund would charge. The winner's share
+        // bears fee(winner_amount); the other share bears the remainder, so
+        // neither share's fee can exceed that share.
+        let (treasury, _) = Self::get_config(env.clone())?;
+        let fee_bps = resolve_fee_with_escrow_override(
+            &env,
+            &escrow.token_address,
+            escrow_fee_override_opt(&escrow),
+        )?;
+        let fee_amount = calculate_fee(outstanding, fee_bps)?;
+        let winner_fee = calculate_fee(amount_to_winner, fee_bps)?;
+        let other_fee = fee_amount
+            .checked_sub(winner_fee)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+        let net_to_winner = amount_to_winner
+            .checked_sub(winner_fee)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+        let net_to_other = amount_to_other
+            .checked_sub(other_fee)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+        if net_to_winner < 0 || net_to_other < 0 {
+            return Err(Error::InvalidMilestoneAmount);
+        }
+
         let token_client = token::Client::new(&env, &escrow.token_address);
 
-        if amount_to_winner > 0 {
+        if net_to_winner > 0 {
             safe_transfer(
                 &token_client,
                 &env.current_contract_address(),
                 &winner,
-                amount_to_winner,
+                net_to_winner,
             )?;
         }
 
-        if amount_to_other > 0 {
+        if net_to_other > 0 {
             safe_transfer(
                 &token_client,
                 &env.current_contract_address(),
                 &other,
-                amount_to_other,
+                net_to_other,
+            )?;
+        }
+
+        if fee_amount > 0 {
+            safe_transfer(
+                &token_client,
+                &env.current_contract_address(),
+                &treasury,
+                fee_amount,
             )?;
         }
 
@@ -1987,8 +2026,9 @@ impl VaultixEscrow {
                 escrow_id,
                 winner,
                 other_party: other,
-                winner_amount: amount_to_winner,
-                other_amount: amount_to_other,
+                winner_amount: net_to_winner,
+                other_amount: net_to_other,
+                fee_amount,
                 resolution,
                 resolution_evidence_hash,
                 status: escrow_status(&escrow),
