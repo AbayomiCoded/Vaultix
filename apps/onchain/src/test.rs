@@ -4016,6 +4016,106 @@ fn test_two_escrow_isolation_no_cross_drain() {
     assert_eq!(token_client.balance(&recipient_b), 0);
     assert_eq!(token_client.balance(&depositor_b), 0);
 }
+
+// --- Issue #727: resolve_dispute must reject never-funded escrows ---
+
+#[test]
+fn test_resolve_dispute_on_unfunded_escrow_rejected_and_pool_untouched() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+
+    // Escrow A: funded with 10,000 tokens
+    let depositor_a = Address::generate(&env);
+    let recipient_a = Address::generate(&env);
+    let escrow_id_a = 701u64;
+    token_admin.mint(&depositor_a, &10_000);
+    client.create_escrow(
+        &escrow_id_a,
+        &depositor_a,
+        &recipient_a,
+        &token_address,
+        &vec![
+            &env,
+            Milestone {
+                amount: 10_000,
+                status: MilestoneStatus::Pending,
+                description: symbol_short!("WorkA"),
+            },
+        ],
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor_a, &contract_id, &10_000, &200);
+    client.deposit_funds(&escrow_id_a);
+
+    // Escrow B: oversized total_amount, never funded
+    let depositor_b = Address::generate(&env);
+    let recipient_b = Address::generate(&env);
+    let escrow_id_b = 702u64;
+    client.create_escrow(
+        &escrow_id_b,
+        &depositor_b,
+        &recipient_b,
+        &token_address,
+        &vec![
+            &env,
+            Milestone {
+                amount: 1_000_000,
+                status: MilestoneStatus::Pending,
+                description: symbol_short!("WorkB"),
+            },
+        ],
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // The public path cannot dispute B ...
+    let r = client.try_raise_dispute(&escrow_id_b, &depositor_b, &valid_evidence_hash(&env));
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+
+    // ... so force B into Disputed (e.g. corrupt/migrated state) with no funds.
+    let mut disputed_b =
+        VaultixEscrow::test_escrow_entry_from_public(client.get_escrow(&escrow_id_b));
+    assert_eq!(disputed_b.funded_amount, 0);
+    let mut milestones = Vec::new(&env);
+    for m in disputed_b.milestones.iter() {
+        let mut m = m.clone();
+        m.status = MilestoneStatus::Disputed;
+        milestones.push_back(m);
+    }
+    disputed_b.milestones = milestones;
+    disputed_b.packed_state = pack_escrow_state(EscrowStatus::Disputed, Resolution::None);
+    client.test_store_escrow_raw(&escrow_id_b, &disputed_b);
+
+    // Full payout and split resolutions on B are both rejected before any transfer.
+    let r = client.try_resolve_dispute(&escrow_id_b, &recipient_b, &None, &None);
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+    let r = client.try_resolve_dispute(&escrow_id_b, &recipient_b, &Some(5_000i128), &None);
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+
+    // A's pooled funds are untouched and B paid out nothing.
+    assert_eq!(token_client.balance(&contract_id), 10_000);
+    assert_eq!(token_client.balance(&recipient_b), 0);
+    assert_eq!(token_client.balance(&depositor_b), 0);
+    assert_eq!(
+        client.get_escrow(&escrow_id_b).status,
+        EscrowStatus::Disputed
+    );
+
+    // A can still release its full balance.
+    client.release_milestone(&escrow_id_a, &0);
+    assert_eq!(token_client.balance(&recipient_a), 10_000);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
 // ===============================================================================
 // Configurable Fee Model Tests (Feature #93)
 // Tests for per-token and per-escrow fee overrides with precedence logic
