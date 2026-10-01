@@ -1458,6 +1458,14 @@ impl VaultixEscrow {
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
+        // Signatures only gate releases, so they may be collected before funding
+        // (Created, right after configure_multisig) or while Active. Disputed and
+        // terminal escrows can never release a milestone again (#734).
+        let status = escrow_status(&escrow);
+        if status != EscrowStatus::Created && status != EscrowStatus::Active {
+            return Err(Error::InvalidEscrowStatus);
+        }
+
         // Require authentication from the signer
         signer.require_auth();
 
