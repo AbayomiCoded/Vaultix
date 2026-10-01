@@ -126,4 +126,67 @@ describe('useDashboardCache', () => {
 
     expect(result.current.loading).toBe(false);
   });
+
+  it('ignores a superseded load when refresh() is called before it resolves', async () => {
+    let resolveFirst!: (v: unknown) => void;
+    const slowFirst = new Promise((resolve) => { resolveFirst = resolve; });
+    const firstData = { items: ['first'] };
+    const secondData = { items: ['second'] };
+
+    const fetcher = jest
+      .fn()
+      .mockReturnValueOnce(slowFirst)
+      .mockResolvedValueOnce(secondData);
+
+    const { result } = renderHook(() => useDashboardCache(fetcher));
+
+    // Let the initial load reach the (slow) fetcher.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Second, fast call supersedes the first.
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.data).toEqual(secondData);
+
+    // First call resolves late and must not overwrite the second.
+    await act(async () => {
+      resolveFirst(firstData);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toEqual(secondData);
+    expect(result.current.loading).toBe(false);
+    expect(dashboardCache.cacheDashboardData).not.toHaveBeenCalledWith(firstData);
+  });
+
+  it('does not update state after unmount mid-fetch', async () => {
+    let resolveFetch!: (v: unknown) => void;
+    const pending = new Promise((resolve) => { resolveFetch = resolve; });
+    const fetcher = jest.fn(() => pending);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { unmount } = renderHook(() => useDashboardCache(fetcher));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    unmount();
+
+    await act(async () => {
+      resolveFetch({ items: [] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(dashboardCache.cacheDashboardData).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
 });
