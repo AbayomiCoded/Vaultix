@@ -2710,6 +2710,84 @@ fn test_zero_amount_milestone_rejected() {
     assert_eq!(result, Err(Ok(Error::ZeroAmount)));
 }
 
+/// Issue #738: an empty milestone list is rejected; it would otherwise create a
+/// zero-value escrow that completes without a single release.
+#[test]
+fn test_create_escrow_rejects_empty_milestones() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let result = client.try_create_escrow(
+        &12u64,
+        &depositor,
+        &recipient,
+        &token_address,
+        &soroban_sdk::Vec::<Milestone>::new(&env),
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    assert_eq!(result, Err(Ok(Error::ZeroAmount)));
+    assert_eq!(
+        client.try_get_escrow(&12u64),
+        Err(Ok(Error::EscrowNotFound))
+    );
+}
+
+#[test]
+fn test_create_escrows_batch_with_empty_milestones_fails_entire_batch() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let requests = vec![
+        &env,
+        CreateEscrowRequest {
+            escrow_id: 21,
+            depositor: depositor.clone(),
+            recipient: recipient.clone(),
+            token_address: token_address.clone(),
+            milestones: vec![
+                &env,
+                Milestone {
+                    amount: 1000,
+                    status: MilestoneStatus::Pending,
+                    description: symbol_short!("Task"),
+                },
+            ],
+            deadline: 1706400000u64,
+            metadata_hash: valid_metadata_hash(&env),
+        },
+        CreateEscrowRequest {
+            escrow_id: 22,
+            depositor: depositor.clone(),
+            recipient: recipient.clone(),
+            token_address: token_address.clone(),
+            milestones: soroban_sdk::Vec::new(&env),
+            deadline: 1706400000u64,
+            metadata_hash: valid_metadata_hash(&env),
+        },
+    ];
+
+    let result = client.try_create_escrows_batch(&requests);
+    assert_eq!(result, Err(Ok(Error::ZeroAmount)));
+
+    // Atomic failure, same as the batch's other validations.
+    assert_eq!(client.try_get_escrow(&21), Err(Ok(Error::EscrowNotFound)));
+    assert_eq!(client.try_get_escrow(&22), Err(Ok(Error::EscrowNotFound)));
+}
+
 #[test]
 fn test_legacy_escrow_migrates_to_v2_and_preserves_metadata() {
     let env = Env::default();
