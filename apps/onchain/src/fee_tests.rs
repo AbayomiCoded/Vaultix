@@ -554,6 +554,60 @@ fn test_fee_never_exceeds_amount_at_edge_bps() {
     assert!(payout >= 0);
 }
 
+// Issue #728: with a fee configured, a re-entrant token cannot make the
+// contract pay the recipient or the treasury twice for one release.
+#[test]
+fn test_reentrant_token_release_collects_fee_once() {
+    use crate::invariant_tests::reentrant_token::{self, ReentrantToken, ReentrantTokenClient};
+
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let treasury = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(100)); // 1%
+
+    let token_id = env.register(ReentrantToken, ());
+    let token = ReentrantTokenClient::new(&env, &token_id);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    token.mint(&depositor, &20_000);
+
+    for escrow_id in [1u64, 2u64] {
+        client.create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token_id,
+            &vec![
+                &env,
+                Milestone {
+                    amount: 10_000,
+                    status: MilestoneStatus::Pending,
+                    description: symbol_short!("Work"),
+                },
+            ],
+            &(env.ledger().timestamp() + 3600),
+            &valid_metadata_hash(&env),
+        );
+        client.deposit_funds(&escrow_id);
+    }
+
+    token.arm(
+        &contract_id,
+        &reentrant_token::ATTACK_RELEASE,
+        &1u64,
+        &depositor,
+    );
+    client.release_milestone(&1u64, &0);
+
+    assert_ne!(token.outcome(), reentrant_token::OUTCOME_SUCCEEDED);
+    assert_eq!(token.balance(&recipient), 9_900);
+    assert_eq!(token.balance(&treasury), 100);
+    assert_eq!(token.balance(&contract_id), 10_000);
+    assert_eq!(client.get_escrow(&1u64).total_released, 10_000);
+}
+
 // --- Issue #737: fee basis is the escrow total, not each milestone ---
 //
 // Documented tolerance: at a constant fee_bps, the total fee collected over any
