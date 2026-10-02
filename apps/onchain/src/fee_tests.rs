@@ -554,6 +554,135 @@ fn test_fee_never_exceeds_amount_at_edge_bps() {
     assert!(payout >= 0);
 }
 
+// --- Issue #735: resolve_dispute charges the platform fee ---
+
+/// Creates and funds escrow 1 with a single milestone of `amount`, raises a
+/// dispute, and returns (client, token, treasury, depositor, recipient).
+fn setup_disputed_escrow<'a>(
+    env: &Env,
+    global_fee_bps: i128,
+    amount: i128,
+    token_fee_bps: Option<i128>,
+    escrow_fee_bps: Option<i128>,
+) -> (
+    VaultixEscrowClient<'a>,
+    token::Client<'a>,
+    Address,
+    Address,
+    Address,
+) {
+    env.mock_all_auths();
+    let treasury = Address::generate(env);
+    let admin = Address::generate(env);
+    let (client, contract_id) = create_test_contract(env, &admin, &treasury, Some(global_fee_bps));
+
+    let depositor = Address::generate(env);
+    let recipient = Address::generate(env);
+    let (token_client, token_admin, token_address) = create_token_contract(env, &admin);
+    token_admin.mint(&depositor, &amount);
+
+    if let Some(bps) = token_fee_bps {
+        client.set_token_fee(&token_address, &bps);
+    }
+
+    client.create_escrow(
+        &1u64,
+        &depositor,
+        &recipient,
+        &token_address,
+        &vec![
+            env,
+            Milestone {
+                amount,
+                status: MilestoneStatus::Pending,
+                description: symbol_short!("Work"),
+            },
+        ],
+        &(env.ledger().timestamp() + 3600),
+        &valid_metadata_hash(env),
+    );
+    if let Some(bps) = escrow_fee_bps {
+        client.set_escrow_fee(&1u64, &bps);
+    }
+    token_client.approve(&depositor, &contract_id, &amount, &200);
+    client.deposit_funds(&1u64);
+    client.raise_dispute(&1u64, &depositor, &BytesN::from_array(env, &[5u8; 32]));
+
+    (client, token_client, treasury, depositor, recipient)
+}
+
+#[test]
+fn test_resolve_dispute_full_recipient_charges_fee() {
+    let env = Env::default();
+    let (client, token, treasury, depositor, recipient) =
+        setup_disputed_escrow(&env, 100, 10_000, None, None); // 1%
+    client.resolve_dispute(&1u64, &recipient, &None, &None);
+
+    assert_eq!(token.balance(&treasury), 100);
+    assert_eq!(token.balance(&recipient), 9_900);
+    assert_eq!(token.balance(&depositor), 0);
+}
+
+#[test]
+fn test_resolve_dispute_full_depositor_charges_fee() {
+    let env = Env::default();
+    let (client, token, treasury, depositor, recipient) =
+        setup_disputed_escrow(&env, 100, 10_000, None, None);
+    client.resolve_dispute(&1u64, &depositor, &None, &None);
+
+    assert_eq!(token.balance(&treasury), 100);
+    assert_eq!(token.balance(&depositor), 9_900);
+    assert_eq!(token.balance(&recipient), 0);
+}
+
+#[test]
+fn test_resolve_dispute_split_charges_fee_on_total_outstanding() {
+    // Rounding case: fee(999) = 4 at 50 bps; winner bears fee(666) = 3, the
+    // other share bears the remaining 1 — total equals a single-shot fee.
+    let env = Env::default();
+    let (client, token, treasury, depositor, recipient) =
+        setup_disputed_escrow(&env, 50, 999, None, None);
+    client.resolve_dispute(&1u64, &recipient, &Some(666), &None);
+
+    assert_eq!(token.balance(&treasury), 4);
+    assert_eq!(token.balance(&recipient), 663);
+    assert_eq!(token.balance(&depositor), 332);
+    assert_eq!(
+        token.balance(&treasury) + token.balance(&recipient) + token.balance(&depositor),
+        999
+    );
+}
+
+#[test]
+fn test_resolve_dispute_fee_precedence_escrow_over_token_over_global() {
+    // Token override (200 bps) beats global (50 bps).
+    let env = Env::default();
+    let (client, token, treasury, _depositor, recipient) =
+        setup_disputed_escrow(&env, 50, 10_000, Some(200), None);
+    client.resolve_dispute(&1u64, &recipient, &None, &None);
+    assert_eq!(token.balance(&treasury), 200);
+    assert_eq!(token.balance(&recipient), 9_800);
+
+    // Escrow override (300 bps) beats token (200 bps) and global (50 bps).
+    let env = Env::default();
+    let (client, token, treasury, _depositor, recipient) =
+        setup_disputed_escrow(&env, 50, 10_000, Some(200), Some(300));
+    client.resolve_dispute(&1u64, &recipient, &None, &None);
+    assert_eq!(token.balance(&treasury), 300);
+    assert_eq!(token.balance(&recipient), 9_700);
+}
+
+#[test]
+fn test_resolve_dispute_zero_fee_pays_out_in_full() {
+    let env = Env::default();
+    let (client, token, treasury, _depositor, recipient) =
+        setup_disputed_escrow(&env, 0, 10_000, None, None);
+    client.resolve_dispute(&1u64, &recipient, &None, &None);
+
+    assert_eq!(token.balance(&treasury), 0);
+    assert_eq!(token.balance(&recipient), 10_000);
+}
+
 // Issue #728: with a fee configured, a re-entrant token cannot make the
 // contract pay the recipient or the treasury twice for one release.
 #[test]

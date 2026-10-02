@@ -1556,7 +1556,9 @@ fn test_admin_resolves_dispute_to_recipient() {
         .iter()
         .all(|m| m.status == MilestoneStatus::Released));
 
-    assert_eq!(token_client.balance(&recipient), 10000);
+    // 50 bps platform fee on the 10_000 outstanding (#735)
+    assert_eq!(token_client.balance(&recipient), 9950);
+    assert_eq!(token_client.balance(&treasury), 50);
     assert_eq!(token_client.balance(&contract_id), 0);
     assert_eq!(token_client.balance(&depositor), 0);
 }
@@ -1619,7 +1621,9 @@ fn test_admin_resolves_dispute_to_depositor() {
         .iter()
         .all(|m| m.status == MilestoneStatus::Disputed));
 
-    assert_eq!(token_client.balance(&depositor), 5000);
+    // 50 bps platform fee on the 5_000 outstanding (#735)
+    assert_eq!(token_client.balance(&depositor), 4975);
+    assert_eq!(token_client.balance(&treasury), 25);
     assert_eq!(token_client.balance(&contract_id), 0);
     assert_eq!(token_client.balance(&recipient), 0);
 }
@@ -1908,6 +1912,122 @@ fn test_resolve_dispute_records_resolution_evidence() {
     let payload: DisputeResolvedEvent = event.2.into_val(&env);
     assert_eq!(payload.resolution_evidence_hash, Some(resolution_hash));
     assert_eq!(payload.escrow_id, escrow_id);
+    // 50 bps on 3_000 (#735): event reports the fee and net payouts.
+    assert_eq!(payload.fee_amount, 15);
+    assert_eq!(payload.winner_amount, 2985);
+    assert_eq!(payload.other_amount, 0);
+}
+
+/// Issue #736: an indexer that only consumes events can reconstruct the final
+/// milestone states after a dispute resolution, without reading storage.
+#[test]
+fn test_dispute_resolution_events_reconstruct_milestone_states() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &12_000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("M1"),
+        },
+        Milestone {
+            amount: 2000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("M2"),
+        },
+        Milestone {
+            amount: 3000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("M3"),
+        },
+    ];
+    for escrow_id in [1u64, 2u64] {
+        client.create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &100000000u64,
+            &valid_metadata_hash(&env),
+        );
+        token_client.approve(&depositor, &contract_id, &6000, &200);
+        client.deposit_funds(&escrow_id);
+    }
+
+    let resolved_topic: soroban_sdk::Vec<Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "v1"),
+        Symbol::new(&env, "DisputeResolved"),
+    )
+        .into_val(&env);
+    let resolved_payload = |env: &Env| -> DisputeResolvedEvent {
+        let events = all_events(env);
+        let event = events
+            .iter()
+            .find(|e| e.0 == contract_id && e.1 == resolved_topic)
+            .expect("DisputeResolved event emitted");
+        event.2.into_val(env)
+    };
+
+    // Escrow 1: milestone 0 released normally, then full recipient win.
+    client.release_milestone(&1u64, &0);
+    client.raise_dispute(&1u64, &recipient, &valid_evidence_hash(&env));
+    client.resolve_dispute(&1u64, &recipient, &None, &None);
+    let payload = resolved_payload(&env);
+
+    // Event alone: every milestone is now Released, including those flipped
+    // by the dispute path that never emitted MilestoneReleased.
+    let expected = vec![
+        &env,
+        MilestoneStatus::Released,
+        MilestoneStatus::Released,
+        MilestoneStatus::Released,
+    ];
+    assert_eq!(payload.resolution, Resolution::Recipient);
+    assert_eq!(payload.milestone_statuses, expected);
+    // Cross-check only: event-derived state matches storage.
+    let stored: soroban_sdk::Vec<MilestoneStatus> = {
+        let mut v = soroban_sdk::Vec::new(&env);
+        for m in client.get_escrow(&1u64).milestones.iter() {
+            v.push_back(m.status);
+        }
+        v
+    };
+    assert_eq!(payload.milestone_statuses, stored);
+
+    // Escrow 2: split resolution leaves unreleased milestones Disputed.
+    client.raise_dispute(&2u64, &depositor, &valid_evidence_hash(&env));
+    client.resolve_dispute(&2u64, &recipient, &Some(4000), &None);
+    let payload = resolved_payload(&env);
+    assert_eq!(payload.resolution, Resolution::Split);
+    assert_eq!(
+        payload.milestone_statuses,
+        vec![
+            &env,
+            MilestoneStatus::Disputed,
+            MilestoneStatus::Disputed,
+            MilestoneStatus::Disputed,
+        ]
+    );
+    let mut stored = soroban_sdk::Vec::new(&env);
+    for m in client.get_escrow(&2u64).milestones.iter() {
+        stored.push_back(m.status);
+    }
+    assert_eq!(payload.milestone_statuses, stored);
 }
 
 /// `None` resolution evidence stays a zero-friction path: resolution succeeds,
@@ -2179,8 +2299,10 @@ fn test_resolve_dispute_split_recipient_wins() {
     // total_released tracks recipient payments only
     assert_eq!(escrow.total_released, 2000);
 
-    assert_eq!(token_client.balance(&recipient), 2000);
-    assert_eq!(token_client.balance(&depositor), 1000);
+    // fee(3000) = 15 at 50 bps: winner bears fee(2000) = 10, other bears 5 (#735)
+    assert_eq!(token_client.balance(&recipient), 1990);
+    assert_eq!(token_client.balance(&depositor), 995);
+    assert_eq!(token_client.balance(&treasury), 15);
     assert_eq!(token_client.balance(&contract_id), 0);
 }
 
@@ -2235,8 +2357,10 @@ fn test_resolve_dispute_split_depositor_wins() {
     // total_released tracks recipient payments; recipient got the "other" share
     assert_eq!(escrow.total_released, 1000);
 
-    assert_eq!(token_client.balance(&depositor), 2000);
-    assert_eq!(token_client.balance(&recipient), 1000);
+    // fee(3000) = 15 at 50 bps: winner bears fee(2000) = 10, other bears 5 (#735)
+    assert_eq!(token_client.balance(&depositor), 1990);
+    assert_eq!(token_client.balance(&recipient), 995);
+    assert_eq!(token_client.balance(&treasury), 15);
     assert_eq!(token_client.balance(&contract_id), 0);
 }
 
@@ -3718,6 +3842,134 @@ fn test_collect_signature_rejects_unapproved_signer() {
     // Approved signer succeeds
     let ok_result = client.try_collect_signature(&escrow_id, &approved_signer);
     assert!(ok_result.is_ok());
+}
+
+// --- Issue #734: collect_signature status guard ---
+
+/// Creates escrow 1 with multisig configured (threshold above the milestone so
+/// releases need only the depositor) and returns (client, token, depositor,
+/// recipient, signer).
+fn setup_multisig_escrow<'a>(
+    env: &Env,
+) -> (
+    VaultixEscrowClient<'a>,
+    token::Client<'a>,
+    Address,
+    Address,
+    Address,
+) {
+    env.mock_all_auths();
+    let admin = Address::generate(env);
+    let treasury = Address::generate(env);
+    let (client, contract_id) = create_test_contract(env, &admin, &treasury, Some(0));
+
+    let depositor = Address::generate(env);
+    let recipient = Address::generate(env);
+    let signer = Address::generate(env);
+    let (token_client, token_admin, token_address) = create_token_contract(env, &admin);
+    token_admin.mint(&depositor, &5000);
+
+    client.create_escrow(
+        &1u64,
+        &depositor,
+        &recipient,
+        &token_address,
+        &vec![
+            env,
+            Milestone {
+                amount: 5000,
+                status: MilestoneStatus::Pending,
+                description: symbol_short!("Task"),
+            },
+        ],
+        &(env.ledger().timestamp() + 3600),
+        &valid_metadata_hash(env),
+    );
+    client.configure_multisig(
+        &1u64,
+        &10_000,
+        &1,
+        &vec![env, depositor.clone(), signer.clone()],
+    );
+    token_client.approve(&depositor, &contract_id, &5000, &200);
+
+    (client, token_client, depositor, recipient, signer)
+}
+
+/// Asserts collect_signature is rejected, records nothing, and emits no
+/// SignatureCollected event.
+fn assert_collect_signature_rejected(env: &Env, client: &VaultixEscrowClient, signer: &Address) {
+    let before = client.get_escrow(&1u64).collected_signatures.len();
+
+    let result = client.try_collect_signature(&1u64, signer);
+    assert_eq!(result, Err(Ok(Error::InvalidEscrowStatus)));
+
+    let signature_collected = Symbol::new(env, "SignatureCollected");
+    for (_, topics, _) in all_events(env).iter() {
+        let is_signature_event = topics.iter().any(|t| {
+            <Symbol as soroban_sdk::TryFromVal<Env, Val>>::try_from_val(env, &t).ok()
+                == Some(signature_collected.clone())
+        });
+        assert!(
+            !is_signature_event,
+            "SignatureCollected emitted for rejected call"
+        );
+    }
+
+    assert_eq!(client.get_escrow(&1u64).collected_signatures.len(), before);
+}
+
+#[test]
+fn test_collect_signature_allowed_on_created_and_active() {
+    let env = Env::default();
+    let (client, _token, depositor, _recipient, signer) = setup_multisig_escrow(&env);
+
+    client.collect_signature(&1u64, &depositor); // Created
+    client.deposit_funds(&1u64);
+    client.collect_signature(&1u64, &signer); // Active
+    assert_eq!(client.get_escrow(&1u64).collected_signatures.len(), 2);
+}
+
+#[test]
+fn test_collect_signature_rejected_on_completed_escrow() {
+    let env = Env::default();
+    let (client, _token, _depositor, _recipient, signer) = setup_multisig_escrow(&env);
+    client.deposit_funds(&1u64);
+    client.release_milestone(&1u64, &0);
+    client.complete_escrow(&1u64);
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Completed);
+
+    assert_collect_signature_rejected(&env, &client, &signer);
+}
+
+#[test]
+fn test_collect_signature_rejected_on_cancelled_resolved_expired_disputed() {
+    // Cancelled
+    let env = Env::default();
+    let (client, _token, _depositor, _recipient, signer) = setup_multisig_escrow(&env);
+    client.cancel_escrow(&1u64);
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Cancelled);
+    assert_collect_signature_rejected(&env, &client, &signer);
+
+    // Disputed, then Resolved
+    let env = Env::default();
+    let (client, _token, depositor, recipient, signer) = setup_multisig_escrow(&env);
+    client.deposit_funds(&1u64);
+    client.raise_dispute(&1u64, &depositor, &valid_evidence_hash(&env));
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Disputed);
+    assert_collect_signature_rejected(&env, &client, &signer);
+    client.resolve_dispute(&1u64, &recipient, &None, &None);
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Resolved);
+    assert_collect_signature_rejected(&env, &client, &signer);
+
+    // Expired
+    let env = Env::default();
+    let (client, _token, depositor, _recipient, signer) = setup_multisig_escrow(&env);
+    client.deposit_funds(&1u64);
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.refund_expired(&1u64, &depositor);
+    assert_eq!(client.get_escrow(&1u64).status, EscrowStatus::Expired);
+    assert_collect_signature_rejected(&env, &client, &signer);
 }
 
 #[test]
@@ -5410,6 +5662,51 @@ fn test_list_escrows_spans_multiple_index_chunks() {
         let empty = client.list_escrows_by_party(&party, &role, &3u32, &100u32);
         assert_eq!(empty.len(), 0);
     }
+}
+
+/// Issue #733: create_escrow's storage footprint is O(1) in the party's
+/// history. Appending the 2nd id and the 202nd id land at the same offset of
+/// their chunk (0 and 2), so the bytes read/written must be identical.
+#[test]
+fn test_create_escrow_index_cost_independent_of_history() {
+    let env = index_test_env();
+    let (client, token_address, milestones) = setup_index_test(&env);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let create = |id: u64| {
+        client.create_escrow(
+            &id,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &100000000u64,
+            &valid_metadata_hash(&env),
+        );
+    };
+
+    create(1);
+    create(2); // index position 1 in chunk 0
+    let early = env.cost_estimate().resources();
+
+    for id in 3..=201 {
+        create(id);
+    }
+    create(202); // index position 201 = position 1 in chunk 2
+    let late = env.cost_estimate().resources();
+
+    // Storage footprint only; CPU/memory are not asserted because the test
+    // host's cost grows with total ledger size, independent of this party.
+    assert!(early.write_bytes > 0);
+    assert_eq!(late.memory_read_entries, early.memory_read_entries);
+    assert_eq!(late.write_entries, early.write_entries);
+    assert_eq!(late.write_bytes, early.write_bytes);
+    assert_eq!(
+        late.persistent_rent_ledger_bytes,
+        early.persistent_rent_ledger_bytes
+    );
 }
 
 #[test]

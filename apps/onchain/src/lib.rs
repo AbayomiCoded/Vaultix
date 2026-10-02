@@ -339,9 +339,19 @@ pub struct DisputeResolvedEvent {
     pub escrow_id: u64,
     pub winner: Address,
     pub other_party: Address,
+    /// Net amount transferred to the winner (after its share of the fee).
     pub winner_amount: i128,
+    /// Net amount transferred to the other party (after its share of the fee).
     pub other_amount: i128,
+    /// Platform fee sent to the treasury (#735).
+    pub fee_amount: i128,
     pub resolution: Resolution,
+    /// Final status of every milestone after resolution, indexed like
+    /// `Escrow::milestones` (#736). Resolution can flip milestones to
+    /// `Released` (full recipient win) or `Disputed` without a per-milestone
+    /// `MilestoneReleased` event, so this is the itemized source of truth an
+    /// indexer must apply for this transition. Bounded by the 20-milestone cap.
+    pub milestone_statuses: Vec<MilestoneStatus>,
     /// Raw sha2-256 digest of the arbitrator's resolution evidence, or `None`
     /// when the arbitrator ruled without publishing a supporting document.
     pub resolution_evidence_hash: Option<BytesN<32>>,
@@ -1473,6 +1483,14 @@ impl VaultixEscrow {
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
+        // Signatures only gate releases, so they may be collected before funding
+        // (Created, right after configure_multisig) or while Active. Disputed and
+        // terminal escrows can never release a milestone again (#734).
+        let status = escrow_status(&escrow);
+        if status != EscrowStatus::Created && status != EscrowStatus::Active {
+            return Err(Error::InvalidEscrowStatus);
+        }
+
         // Require authentication from the signer
         signer.require_auth();
 
@@ -1916,6 +1934,33 @@ impl VaultixEscrow {
             return Err(Error::InvalidMilestoneAmount);
         }
 
+        // Platform fee (#735): same escrow > token > global precedence and the
+        // same escrow-total basis (#737) as the other payout paths, charged on
+        // the distributed outstanding amount. The winner's share bears its own
+        // incremental fee; the other share bears the remainder, so neither
+        // share's fee can exceed that share.
+        let (treasury, _) = Self::get_config(env.clone())?;
+        let fee_bps = resolve_fee_with_escrow_override(
+            &env,
+            &escrow.token_address,
+            escrow_fee_override_opt(&escrow),
+        )?;
+        let fee_amount = calculate_incremental_fee(escrow.total_released, outstanding, fee_bps)?;
+        let winner_fee =
+            calculate_incremental_fee(escrow.total_released, amount_to_winner, fee_bps)?;
+        let other_fee = fee_amount
+            .checked_sub(winner_fee)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+        let net_to_winner = amount_to_winner
+            .checked_sub(winner_fee)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+        let net_to_other = amount_to_other
+            .checked_sub(other_fee)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+        if net_to_winner < 0 || net_to_other < 0 {
+            return Err(Error::InvalidMilestoneAmount);
+        }
+
         // Update accounting and milestone statuses
         let (amount_to_recipient, resolution) = if amount_to_winner == outstanding
             && amount_to_other == 0
@@ -1986,22 +2031,36 @@ impl VaultixEscrow {
         // Interactions only after state is persisted (#728).
         let token_client = token::Client::new(&env, &escrow.token_address);
 
-        if amount_to_winner > 0 {
+        if net_to_winner > 0 {
             safe_transfer(
                 &token_client,
                 &env.current_contract_address(),
                 &winner,
-                amount_to_winner,
+                net_to_winner,
             )?;
         }
 
-        if amount_to_other > 0 {
+        if net_to_other > 0 {
             safe_transfer(
                 &token_client,
                 &env.current_contract_address(),
                 &other,
-                amount_to_other,
+                net_to_other,
             )?;
+        }
+
+        if fee_amount > 0 {
+            safe_transfer(
+                &token_client,
+                &env.current_contract_address(),
+                &treasury,
+                fee_amount,
+            )?;
+        }
+
+        let mut milestone_statuses: Vec<MilestoneStatus> = Vec::new(&env);
+        for milestone in escrow.milestones.iter() {
+            milestone_statuses.push_back(milestone.status);
         }
 
         publish_event(
@@ -2011,9 +2070,11 @@ impl VaultixEscrow {
                 escrow_id,
                 winner,
                 other_party: other,
-                winner_amount: amount_to_winner,
-                other_amount: amount_to_other,
+                winner_amount: net_to_winner,
+                other_amount: net_to_other,
+                fee_amount,
                 resolution,
+                milestone_statuses,
                 resolution_evidence_hash,
                 status: escrow_status(&escrow),
                 total_amount: escrow.total_amount,
