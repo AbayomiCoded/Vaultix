@@ -444,6 +444,60 @@ fn test_accept_admin_requires_pending_admin_auth() {
     assert_eq!(client.get_pending_admin(), None);
 }
 
+/// Issue #730: an unrelated address cannot hijack a pending admin proposal.
+#[test]
+fn test_accept_admin_rejects_unrelated_address() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+
+    // Only the attacker signs accept_admin.
+    let attacker = Address::generate(&env);
+    let result = client
+        .mock_auths(&[MockAuth {
+            address: &attacker,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "accept_admin",
+                args: ().into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_accept_admin();
+    assert!(result.is_err());
+
+    // Nothing changed: the current admin stays, the proposal is still pending
+    // for the intended address only.
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(
+        client.get_pending_admin().map(|p| p.new_admin),
+        Some(replacement_admin.clone())
+    );
+
+    // The intended address can still complete the handshake.
+    client
+        .mock_auths(&[MockAuth {
+            address: &replacement_admin,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "accept_admin",
+                args: ().into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .accept_admin();
+    assert_eq!(client.get_admin(), replacement_admin);
+    assert_ne!(client.get_admin(), attacker);
+}
+
 #[test]
 fn test_cancel_admin_proposal_withdraws_pending() {
     let env = Env::default();
@@ -665,7 +719,7 @@ fn test_create_escrow_fails_when_paused() {
         },
     ];
 
-    let deadline = 1_706_400_000u64;
+    let deadline = 100_000_000u64;
 
     let result = client.try_create_escrow(
         &escrow_id,
@@ -707,7 +761,7 @@ fn test_deposit_funds_fails_when_paused() {
         },
     ];
 
-    let deadline = 1_706_400_000u64;
+    let deadline = 100_000_000u64;
     client.create_escrow(
         &escrow_id,
         &depositor,
@@ -763,7 +817,7 @@ fn test_create_and_get_escrow() {
         },
     ];
 
-    let deadline = 1706400000u64;
+    let deadline = 100000000u64;
 
     client.create_escrow(
         &escrow_id,
@@ -856,7 +910,7 @@ fn test_create_escrow_rejects_zero_metadata_hash() {
         &recipient,
         &token_address,
         &milestones,
-        &1_706_400_000u64,
+        &100_000_000u64,
         &BytesN::from_array(&env, &[0u8; 32]),
     );
 
@@ -894,7 +948,7 @@ fn test_create_escrows_batch_rejects_zero_metadata_hash() {
             recipient,
             token_address,
             milestones,
-            deadline: 1_706_400_000u64,
+            deadline: 100_000_000u64,
             metadata_hash: BytesN::from_array(&env, &[0u8; 32]),
         },
     ];
@@ -921,8 +975,8 @@ fn test_create_escrows_batch_and_get() {
 
     let escrow_id_1 = 101u64;
     let escrow_id_2 = 102u64;
-    let deadline_1 = 1706400000u64;
-    let deadline_2 = 1706403600u64;
+    let deadline_1 = 100000000u64;
+    let deadline_2 = 100003600u64;
 
     let milestones_1 = vec![
         &env,
@@ -1073,7 +1127,7 @@ fn test_create_escrows_batch_is_atomic() {
             recipient: recipient_1,
             token_address: token_address.clone(),
             milestones: milestones.clone(),
-            deadline: 1706400000u64,
+            deadline: 100000000u64,
             metadata_hash: valid_metadata_hash(&env),
         },
         CreateEscrowRequest {
@@ -1082,7 +1136,7 @@ fn test_create_escrows_batch_is_atomic() {
             recipient: recipient_2,
             token_address,
             milestones,
-            deadline: 1706403600u64,
+            deadline: 100003600u64,
             metadata_hash: valid_metadata_hash(&env),
         },
     ];
@@ -1139,7 +1193,7 @@ fn test_deposit_funds() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -1201,7 +1255,7 @@ fn test_release_milestone_with_tokens() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -1268,7 +1322,7 @@ fn test_dispute_blocks_release() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -1323,7 +1377,7 @@ fn test_complete_escrow_with_all_releases() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -1379,7 +1433,7 @@ fn test_cancel_escrow_with_refund() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -1433,7 +1487,7 @@ fn test_cancel_unfunded_escrow() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -1482,7 +1536,7 @@ fn test_admin_resolves_dispute_to_recipient() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -1547,7 +1601,7 @@ fn test_admin_resolves_dispute_to_depositor() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -1612,7 +1666,7 @@ fn test_raise_dispute_happy_path() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &1000, &200);
@@ -1655,7 +1709,7 @@ fn test_raise_dispute_happy_path() {
             status: EscrowStatus::Disputed,
             total_amount: 1000,
             total_released: 0,
-            deadline: 1706400000,
+            deadline: 100000000,
             timestamp: 0,
         }
     );
@@ -1696,7 +1750,7 @@ fn setup_disputable_escrow<'a>(
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(env),
     );
     token_client.approve(&depositor, &contract_id, &amount, &200);
@@ -1808,7 +1862,7 @@ fn test_dispute_raised_event_includes_evidence_hash() {
             status: EscrowStatus::Disputed,
             total_amount: 3000,
             total_released: 0,
-            deadline: 1706400000,
+            deadline: 100000000,
             timestamp: 0,
         }
     );
@@ -1907,7 +1961,7 @@ fn test_dispute_resolution_events_reconstruct_milestone_states() {
             &recipient,
             &token_address,
             &milestones,
-            &1706400000u64,
+            &100000000u64,
             &valid_metadata_hash(&env),
         );
         token_client.approve(&depositor, &contract_id, &6000, &200);
@@ -2061,7 +2115,7 @@ fn test_raise_dispute_invalid_status() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &5000, &200);
@@ -2081,7 +2135,7 @@ fn test_raise_dispute_invalid_status() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &5000, &200);
@@ -2127,7 +2181,7 @@ fn test_resolve_dispute_invalid_winner_or_overflow() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &1000, &200);
@@ -2173,7 +2227,7 @@ fn test_resolve_dispute_while_paused() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &5000, &200);
@@ -2229,7 +2283,7 @@ fn test_resolve_dispute_split_recipient_wins() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &3000, &200);
@@ -2287,7 +2341,7 @@ fn test_resolve_dispute_split_depositor_wins() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &3000, &200);
@@ -2344,7 +2398,7 @@ fn test_resolve_dispute_split_negative_amount() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &1000, &200);
@@ -2392,7 +2446,7 @@ fn test_resolve_dispute_split_exceeds_outstanding() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &1000, &200);
@@ -2442,7 +2496,7 @@ fn test_resolved_is_terminal() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &2000, &200);
@@ -2470,7 +2524,7 @@ fn test_resolved_is_terminal() {
     assert_eq!(r, Err(Ok(Error::EscrowNotActive)));
 
     // refund_expired must be blocked (advance ledger past deadline)
-    env.ledger().with_mut(|li| li.timestamp = 1706400001u64);
+    env.ledger().with_mut(|li| li.timestamp = 100000001u64);
     let r = client.try_refund_expired(&escrow_id, &depositor);
     assert_eq!(r, Err(Ok(Error::InvalidStatusForRefund)));
 }
@@ -2509,7 +2563,7 @@ fn test_duplicate_escrow_id() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     client.create_escrow(
@@ -2518,7 +2572,7 @@ fn test_duplicate_escrow_id() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 }
@@ -2557,7 +2611,7 @@ fn test_double_release() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &1000, &200);
@@ -2605,7 +2659,7 @@ fn test_too_many_milestones() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 }
@@ -2644,7 +2698,7 @@ fn test_invalid_milestone_amount() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 }
@@ -2684,7 +2738,7 @@ fn test_unauthorized_confirm_delivery() {
         &seller,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -2727,7 +2781,7 @@ fn test_double_confirm_delivery() {
         &seller,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -2772,7 +2826,7 @@ fn test_zero_amount_milestone_rejected() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -2802,7 +2856,7 @@ fn test_legacy_escrow_migrates_to_v2_and_preserves_metadata() {
         total_released: 0,
         milestones: Vec::new(&env),
         status: EscrowStatus::Created,
-        deadline: 1706400000u64,
+        deadline: 100000000u64,
         resolution: Resolution::None,
         threshold_amount: 10000,
         required_signatures: 1,
@@ -2867,7 +2921,7 @@ fn test_milestone_sum_overflow_rejected() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -2906,7 +2960,7 @@ fn test_negative_amount_milestone_rejected() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -2944,7 +2998,7 @@ fn test_self_dealing_rejected() {
         &same_party,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -2988,7 +3042,7 @@ fn test_valid_escrow_creation_succeeds() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -3036,7 +3090,7 @@ fn test_double_deposit_rejected() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -3082,7 +3136,7 @@ fn test_cancel_active_escrow_retains_fee() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -3138,7 +3192,7 @@ fn test_release_milestone_before_deposit() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -3306,7 +3360,7 @@ fn test_refund_expired_blocked_when_fully_released() {
     env.mock_all_auths();
 
     // Use a far-future deadline so we can release the milestone first
-    let deadline = 9_999_999_999u64;
+    let deadline = 150_000_000u64;
     let (client, depositor, escrow_id, _, _) = setup_funded_escrow_for_refund(&env, deadline);
 
     // Release the only milestone — escrow transitions to Completed
@@ -3566,6 +3620,126 @@ fn test_create_escrows_batch_invalid_deadline_fails_entire_batch() {
     assert_eq!(client.try_get_escrow(&202), Err(Ok(Error::EscrowNotFound)));
 }
 
+// --- Issue #729: deadline bounds (zero / past / beyond max horizon) ---
+
+fn deadline_test_setup<'a>(env: &Env) -> (VaultixEscrowClient<'a>, Address, Address, Address) {
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1_000_000);
+    let admin = Address::generate(env);
+    let treasury = Address::generate(env);
+    let (client, _contract_id) = create_test_contract(env, &admin, &treasury, Some(50));
+    (
+        client,
+        Address::generate(env),
+        Address::generate(env),
+        Address::generate(env),
+    )
+}
+
+fn deadline_test_milestones(env: &Env) -> Vec<Milestone> {
+    vec![
+        env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ]
+}
+
+#[test]
+fn test_create_escrow_rejects_out_of_bounds_deadlines() {
+    let env = Env::default();
+    let (client, depositor, recipient, token) = deadline_test_setup(&env);
+    let now = env.ledger().timestamp();
+    let milestones = deadline_test_milestones(&env);
+
+    for (escrow_id, deadline) in [
+        (1u64, 0u64),                                // zero
+        (2u64, now - 1),                             // past
+        (3u64, now + MAX_DEADLINE_HORIZON_SECS + 1), // beyond max horizon
+        (4u64, u64::MAX),                            // far beyond max horizon
+    ] {
+        let result = client.try_create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token,
+            &milestones,
+            &deadline,
+            &valid_metadata_hash(&env),
+        );
+        assert_eq!(
+            result,
+            Err(Ok(Error::InvalidDeadline)),
+            "deadline {deadline}"
+        );
+        assert_eq!(
+            client.try_get_escrow(&escrow_id),
+            Err(Ok(Error::EscrowNotFound))
+        );
+    }
+}
+
+#[test]
+fn test_create_escrow_accepts_deadline_at_max_horizon() {
+    let env = Env::default();
+    let (client, depositor, recipient, token) = deadline_test_setup(&env);
+    let deadline = env.ledger().timestamp() + MAX_DEADLINE_HORIZON_SECS;
+
+    client.create_escrow(
+        &1u64,
+        &depositor,
+        &recipient,
+        &token,
+        &deadline_test_milestones(&env),
+        &deadline,
+        &valid_metadata_hash(&env),
+    );
+    assert_eq!(client.get_escrow(&1u64).deadline, deadline);
+}
+
+#[test]
+fn test_create_escrows_batch_rejects_zero_and_beyond_horizon_deadlines() {
+    let env = Env::default();
+    let (client, depositor, recipient, token) = deadline_test_setup(&env);
+    let now = env.ledger().timestamp();
+    let milestones = deadline_test_milestones(&env);
+
+    for bad_deadline in [0u64, now + MAX_DEADLINE_HORIZON_SECS + 1] {
+        let requests = vec![
+            &env,
+            CreateEscrowRequest {
+                escrow_id: 301,
+                depositor: depositor.clone(),
+                recipient: recipient.clone(),
+                token_address: token.clone(),
+                milestones: milestones.clone(),
+                deadline: now + 3600, // valid
+                metadata_hash: valid_metadata_hash(&env),
+            },
+            CreateEscrowRequest {
+                escrow_id: 302,
+                depositor: depositor.clone(),
+                recipient: recipient.clone(),
+                token_address: token.clone(),
+                milestones: milestones.clone(),
+                deadline: bad_deadline,
+                metadata_hash: valid_metadata_hash(&env),
+            },
+        ];
+
+        let result = client.try_create_escrows_batch(&requests);
+        assert_eq!(
+            result,
+            Err(Ok(Error::InvalidDeadline)),
+            "deadline {bad_deadline}"
+        );
+        assert_eq!(client.try_get_escrow(&301), Err(Ok(Error::EscrowNotFound)));
+        assert_eq!(client.try_get_escrow(&302), Err(Ok(Error::EscrowNotFound)));
+    }
+}
+
 // --- Issue #621: Initialization & Uninitialized Protection ---
 
 #[test]
@@ -3606,7 +3780,7 @@ fn test_uninitialized_contract_rejects_operations() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     assert_eq!(result, Err(Ok(Error::ContractNotInitialized)));
@@ -3653,7 +3827,7 @@ fn test_collect_signature_rejects_unapproved_signer() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -3833,7 +4007,7 @@ fn test_configure_multisig_validation_errors() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -3887,7 +4061,7 @@ fn test_release_above_threshold_requires_depositor_auth() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -4182,7 +4356,7 @@ fn test_raise_dispute_on_created_escrow_rejected() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -4226,7 +4400,7 @@ fn test_two_escrow_isolation_no_cross_drain() {
         &recipient_a,
         &token_address,
         &milestones_a,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
     token_client.approve(&depositor_a, &contract_id, &10_000, &200);
@@ -4255,7 +4429,7 @@ fn test_two_escrow_isolation_no_cross_drain() {
         &recipient_b,
         &token_address,
         &milestones_b,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -4267,6 +4441,106 @@ fn test_two_escrow_isolation_no_cross_drain() {
     assert_eq!(token_client.balance(&contract_id), 10_000);
     assert_eq!(token_client.balance(&recipient_b), 0);
     assert_eq!(token_client.balance(&depositor_b), 0);
+}
+
+// --- Issue #727: resolve_dispute must reject never-funded escrows ---
+
+#[test]
+fn test_resolve_dispute_on_unfunded_escrow_rejected_and_pool_untouched() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+
+    // Escrow A: funded with 10,000 tokens
+    let depositor_a = Address::generate(&env);
+    let recipient_a = Address::generate(&env);
+    let escrow_id_a = 701u64;
+    token_admin.mint(&depositor_a, &10_000);
+    client.create_escrow(
+        &escrow_id_a,
+        &depositor_a,
+        &recipient_a,
+        &token_address,
+        &vec![
+            &env,
+            Milestone {
+                amount: 10_000,
+                status: MilestoneStatus::Pending,
+                description: symbol_short!("WorkA"),
+            },
+        ],
+        &100000000u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor_a, &contract_id, &10_000, &200);
+    client.deposit_funds(&escrow_id_a);
+
+    // Escrow B: oversized total_amount, never funded
+    let depositor_b = Address::generate(&env);
+    let recipient_b = Address::generate(&env);
+    let escrow_id_b = 702u64;
+    client.create_escrow(
+        &escrow_id_b,
+        &depositor_b,
+        &recipient_b,
+        &token_address,
+        &vec![
+            &env,
+            Milestone {
+                amount: 1_000_000,
+                status: MilestoneStatus::Pending,
+                description: symbol_short!("WorkB"),
+            },
+        ],
+        &100000000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // The public path cannot dispute B ...
+    let r = client.try_raise_dispute(&escrow_id_b, &depositor_b, &valid_evidence_hash(&env));
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+
+    // ... so force B into Disputed (e.g. corrupt/migrated state) with no funds.
+    let mut disputed_b =
+        VaultixEscrow::test_escrow_entry_from_public(client.get_escrow(&escrow_id_b));
+    assert_eq!(disputed_b.funded_amount, 0);
+    let mut milestones = Vec::new(&env);
+    for m in disputed_b.milestones.iter() {
+        let mut m = m.clone();
+        m.status = MilestoneStatus::Disputed;
+        milestones.push_back(m);
+    }
+    disputed_b.milestones = milestones;
+    disputed_b.packed_state = pack_escrow_state(EscrowStatus::Disputed, Resolution::None);
+    client.test_store_escrow_raw(&escrow_id_b, &disputed_b);
+
+    // Full payout and split resolutions on B are both rejected before any transfer.
+    let r = client.try_resolve_dispute(&escrow_id_b, &recipient_b, &None, &None);
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+    let r = client.try_resolve_dispute(&escrow_id_b, &recipient_b, &Some(5_000i128), &None);
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+
+    // A's pooled funds are untouched and B paid out nothing.
+    assert_eq!(token_client.balance(&contract_id), 10_000);
+    assert_eq!(token_client.balance(&recipient_b), 0);
+    assert_eq!(token_client.balance(&depositor_b), 0);
+    assert_eq!(
+        client.get_escrow(&escrow_id_b).status,
+        EscrowStatus::Disputed
+    );
+
+    // A can still release its full balance.
+    client.release_milestone(&escrow_id_a, &0);
+    assert_eq!(token_client.balance(&recipient_a), 10_000);
+    assert_eq!(token_client.balance(&contract_id), 0);
 }
 // ===============================================================================
 // Configurable Fee Model Tests (Feature #93)
@@ -4779,7 +5053,7 @@ fn test_configure_multisig_threshold() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -4827,7 +5101,7 @@ fn test_collect_signature() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -4885,7 +5159,7 @@ fn test_release_milestone_below_threshold_single_signature() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -4939,7 +5213,7 @@ fn test_release_milestone_above_threshold_insufficient_signatures() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -4987,7 +5261,7 @@ fn test_release_milestone_above_threshold_sufficient_signatures() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -5045,7 +5319,7 @@ fn test_list_escrows_by_depositor() {
         &recipient1,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -5055,7 +5329,7 @@ fn test_list_escrows_by_depositor() {
         &recipient2,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -5101,7 +5375,7 @@ fn test_list_escrows_by_recipient() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -5111,7 +5385,7 @@ fn test_list_escrows_by_recipient() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -5157,7 +5431,7 @@ fn test_list_escrows_pagination() {
             &recipient,
             &token_address,
             &milestones,
-            &1706400000u64,
+            &100000000u64,
             &valid_metadata_hash(&env),
         );
     }
@@ -5212,6 +5486,34 @@ fn test_list_escrows_page_size_limit() {
     let result =
         client.try_list_escrows_by_party(&depositor, &symbol_short!("depositor"), &0u32, &0u32);
     assert_eq!(result, Err(Ok(Error::VectorTooLarge)));
+}
+
+#[test]
+fn test_list_escrows_huge_page_returns_overflow_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let depositor = Address::generate(&env);
+
+    // page * page_size overflows u32
+    let result =
+        client.try_list_escrows_by_party(&depositor, &symbol_short!("depositor"), &u32::MAX, &2u32);
+    assert_eq!(result, Err(Ok(Error::ArithmeticOverflow)));
+
+    // page * page_size fits, but start_idx + page_size overflows u32
+    let result = client.try_list_escrows_by_party(
+        &depositor,
+        &symbol_short!("depositor"),
+        &(u32::MAX / 100),
+        &100u32,
+    );
+    assert_eq!(result, Err(Ok(Error::ArithmeticOverflow)));
 }
 
 #[test]
@@ -5316,7 +5618,7 @@ fn test_list_escrows_spans_multiple_index_chunks() {
             &recipient,
             &token_address,
             &milestones,
-            &1706400000u64,
+            &100000000u64,
             &valid_metadata_hash(&env),
         );
     }
@@ -5380,7 +5682,7 @@ fn test_create_escrow_index_cost_independent_of_history() {
             &recipient,
             &token_address,
             &milestones,
-            &1706400000u64,
+            &100000000u64,
             &valid_metadata_hash(&env),
         );
     };
@@ -5422,7 +5724,7 @@ fn test_list_escrows_pagination_across_chunk_boundary() {
             &recipient,
             &token_address,
             &milestones,
-            &1706400000u64,
+            &100000000u64,
             &valid_metadata_hash(&env),
         );
     }
@@ -5476,7 +5778,7 @@ fn test_create_escrow_cost_is_independent_of_history() {
             to,
             &token_address,
             &milestones,
-            &1706400000u64,
+            &100000000u64,
             &valid_metadata_hash(&env),
         );
     };
@@ -5524,7 +5826,7 @@ fn test_legacy_party_index_migrates_on_list() {
             &recipient,
             &token_address,
             &milestones,
-            &1706400000u64,
+            &100000000u64,
             &valid_metadata_hash(&env),
         );
     }
@@ -5578,7 +5880,7 @@ fn test_legacy_party_index_migrates_on_list() {
         &new_recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -5603,7 +5905,7 @@ fn test_legacy_party_index_migrates_on_append() {
             &Address::generate(&env),
             &token_address,
             &milestones,
-            &1706400000u64,
+            &100000000u64,
             &valid_metadata_hash(&env),
         );
     }
@@ -5622,7 +5924,7 @@ fn test_legacy_party_index_migrates_on_append() {
         &legacy_recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -5675,7 +5977,7 @@ fn test_list_escrows_returns_lightweight_summaries() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -5692,7 +5994,7 @@ fn test_list_escrows_returns_lightweight_summaries() {
     assert_eq!(summary.token_address, token_address);
     assert_eq!(summary.total_amount, 5000);
     assert_eq!(summary.status, EscrowStatus::Created);
-    assert_eq!(summary.deadline, 1706400000);
+    assert_eq!(summary.deadline, 100000000);
     assert_eq!(summary.metadata_hash, valid_metadata_hash(&env));
 }
 
@@ -5754,7 +6056,7 @@ fn test_lifecycle_events_contain_all_summary_fields() {
         },
     ];
 
-    let deadline = 1706400000u64;
+    let deadline = 100000000u64;
 
     // Create escrow to test the new EscrowCreatedEvent fields
     client.create_escrow(
@@ -5814,7 +6116,7 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
         },
     ];
 
-    let deadline = 1706400000u64;
+    let deadline = 100000000u64;
 
     // --- Step 1: Create escrow ---
     client.create_escrow(
@@ -5913,7 +6215,7 @@ fn test_event_ordering_is_deterministic() {
         &recipient,
         &token_address,
         &milestones,
-        &1706400000u64,
+        &100000000u64,
         &valid_metadata_hash(&env),
     );
 
@@ -5968,7 +6270,7 @@ fn test_event_topics_are_backwards_compatible() {
     // Since soroban-sdk 21, `env.events().all()` only reports the events of the
     // most recent top-level invocation, so each operation is checked right
     // after its own call instead of walking one accumulated log.
-    let deadline = 1706400000u64;
+    let deadline = 100000000u64;
 
     client.create_escrow(
         &escrow_id,
@@ -6072,5 +6374,67 @@ fn assert_canonical_event_topics(
         found,
         "Event {} must be emitted with canonical topic format (Vaultix, v1, {})",
         expected_name, expected_name
+    );
+}
+
+/// Issue #745: a routine mutation on an escrow already at the current storage
+/// version must not rewrite the version marker.
+#[test]
+fn test_release_on_current_version_escrow_skips_version_marker_write() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &20_000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 6000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Phase1"),
+        },
+        Milestone {
+            amount: 4000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Phase2"),
+        },
+    ];
+    for escrow_id in [1u64, 2u64] {
+        client.create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &(env.ledger().timestamp() + 3600),
+            &valid_metadata_hash(&env),
+        );
+        token_client.approve(&depositor, &contract_id, &10_000, &200);
+        client.deposit_funds(&escrow_id);
+    }
+
+    // Escrow 1 is already at the current version: no marker write expected.
+    client.release_milestone(&1u64, &0);
+    let current_writes = env.cost_estimate().resources().write_entries;
+
+    // Escrow 2 has no marker, so this release must write it exactly once.
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .remove(&get_escrow_version_key(2u64));
+    });
+    client.release_milestone(&2u64, &0);
+    let marker_writes = env.cost_estimate().resources().write_entries;
+
+    assert_eq!(marker_writes, current_writes + 1);
+    assert_eq!(
+        client.test_get_escrow_version(&2u64),
+        ESCROW_ENTRY_STORAGE_VERSION
     );
 }
