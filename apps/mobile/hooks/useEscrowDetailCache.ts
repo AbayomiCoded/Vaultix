@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   cacheEscrowDetail,
@@ -30,15 +30,33 @@ export function useEscrowDetailCache(
   const [error, setError] =
     useState<Error | null>(null);
 
+  // Monotonic token: only the most recent load() may write state.
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(true);
+
   useEffect(() => {
+    mountedRef.current = true;
     load();
+
+    return () => {
+      // Invalidate the in-flight request on unmount / dependency change.
+      requestIdRef.current += 1;
+      mountedRef.current = false;
+    };
   }, [escrowId]);
 
   async function load() {
+    const requestId = ++requestIdRef.current;
+    const isCurrent = () =>
+      mountedRef.current &&
+      requestId === requestIdRef.current;
+
     setLoading(true);
     setError(null);
 
     const online = await isOnline();
+
+    if (!isCurrent()) return;
 
     if (!online) {
       setOffline(true);
@@ -47,6 +65,8 @@ export function useEscrowDetailCache(
         await getCachedEscrowDetail(
           escrowId
         );
+
+      if (!isCurrent()) return;
 
       if (cached) {
         setData(cached.data);
@@ -65,10 +85,14 @@ export function useEscrowDetailCache(
     try {
       const fresh = await fetcher();
 
+      if (!isCurrent()) return;
+
       await cacheEscrowDetail(
         escrowId,
         fresh
       );
+
+      if (!isCurrent()) return;
 
       setData(fresh);
 
@@ -83,6 +107,8 @@ export function useEscrowDetailCache(
           ? err
           : new Error(String(err));
 
+      if (!isCurrent()) return;
+
       setError(error);
       setOffline(true);
 
@@ -90,6 +116,8 @@ export function useEscrowDetailCache(
         await getCachedEscrowDetail(
           escrowId
         );
+
+      if (!isCurrent()) return;
 
       if (cached) {
         setData(cached.data);
@@ -101,7 +129,9 @@ export function useEscrowDetailCache(
         setStale(age > 1000 * 60 * 30);
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) {
+        setLoading(false);
+      }
     }
   }
 

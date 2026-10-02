@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   cacheDashboardData,
@@ -29,21 +29,41 @@ export function useDashboardCache(
   const [error, setError] =
     useState<Error | null>(null);
 
+  // Monotonic token: only the most recent load() may write state.
+  const requestIdRef = useRef(0);
+  const mountedRef = useRef(true);
+
   useEffect(() => {
+    mountedRef.current = true;
     load();
+
+    return () => {
+      // Invalidate the in-flight request on unmount / dependency change.
+      requestIdRef.current += 1;
+      mountedRef.current = false;
+    };
   }, []);
 
   async function load() {
+    const requestId = ++requestIdRef.current;
+    const isCurrent = () =>
+      mountedRef.current &&
+      requestId === requestIdRef.current;
+
     setLoading(true);
     setError(null);
 
     const online = await isOnline();
+
+    if (!isCurrent()) return;
 
     if (!online) {
       setOffline(true);
 
       const cached =
         await getCachedDashboardData();
+
+      if (!isCurrent()) return;
 
       if (cached) {
         setData(cached.data);
@@ -62,7 +82,11 @@ export function useDashboardCache(
     try {
       const fresh = await fetcher();
 
+      if (!isCurrent()) return;
+
       await cacheDashboardData(fresh);
+
+      if (!isCurrent()) return;
 
       setData(fresh);
       setOffline(false);
@@ -74,11 +98,15 @@ export function useDashboardCache(
           ? err
           : new Error(String(err));
 
+      if (!isCurrent()) return;
+
       setError(error);
       setOffline(true);
 
       const cached =
         await getCachedDashboardData();
+
+      if (!isCurrent()) return;
 
       if (cached) {
         setData(cached.data);
@@ -90,7 +118,9 @@ export function useDashboardCache(
         setStale(age > 1000 * 60 * 30);
       }
     } finally {
-      setLoading(false);
+      if (isCurrent()) {
+        setLoading(false);
+      }
     }
   }
 
