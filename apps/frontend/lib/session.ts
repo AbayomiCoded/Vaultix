@@ -128,4 +128,19 @@ if (typeof window !== "undefined") {
       notify();
     }
   });
+
+  // Keep other tabs in sync: a login/logout/token-refresh in one tab
+  // updates localStorage, which fires this `storage` event in every
+  // *other* tab (never the tab that made the change). Without this,
+  // a second tab would keep its WebSocket connected under a stale or
+  // revoked token after the user logs out elsewhere.
+  window.addEventListener("storage", (event) => {
+    if (event.key !== "vaultix_token" && event.key !== "vaultix_refresh_token") {
+      return;
+    }
+    current = readPersistedSession();
+    hydrated = true;
+    apiClient.applySessionToken(current?.accessToken ?? null);
+    notify();
+  });
 }

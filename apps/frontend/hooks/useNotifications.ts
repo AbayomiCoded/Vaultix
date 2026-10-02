@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { notificationService, NotificationPreference, UpdatePreferenceDto } from '@/services/notification';
 import { Notification } from '@/types/notification';
 import { useWebSocket } from '@/app/contexts/WebSocketContext';
+import { NotificationEventPayload } from '@/lib/websocket';
 import { toast } from 'sonner';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -162,6 +163,7 @@ export const useNotifications = (): UseNotificationsReturn => {
 
   // Track whether initial fetch has happened to avoid double-fetch in StrictMode
   const initialFetchDone = useRef(false);
+  const hasConnectedBefore = useRef(false);
 
   // Debounce state for API calls
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -329,9 +331,17 @@ export const useNotifications = (): UseNotificationsReturn => {
   }, [fetchNotifications, fetchPreferences]);
 
   useEffect(() => {
+    if (!isConnected) return;
+    if (hasConnectedBefore.current) {
+      void fetchNotifications();
+    }
+    hasConnectedBefore.current = true;
+  }, [isConnected, fetchNotifications]);
+
+  useEffect(() => {
     if (!socket || !isConnected) return;
 
-    const handleNewNotification = (data: any) => {
+    const handleNewNotification = (data: NotificationEventPayload) => {
       console.log('Real-time notification received via WebSocket:', data);
       playNotificationSound();
 
@@ -372,10 +382,13 @@ export const useNotifications = (): UseNotificationsReturn => {
       });
     };
 
-    socket.on('notification:new', handleNewNotification);
+    // Wire name is `notification.new` (dot), matching
+    // EventsGateway.emitNotification — not the colon form used elsewhere
+    // in older docs/tickets.
+    socket.on('notification.new', handleNewNotification);
 
     return () => {
-      socket.off('notification:new', handleNewNotification);
+      socket.off('notification.new', handleNewNotification);
     };
   }, [socket, isConnected]);
 

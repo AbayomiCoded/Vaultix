@@ -29,6 +29,7 @@ import Constants from 'expo-constants';
 
 import { notificationApi } from './api';
 import { getSecureItem, saveSecureItem, deleteSecureItem } from '../utils/secureStore';
+import { showToast } from '../components/Toast';
 import type { DeviceRegistration, PushPermissionStatus, PushPlatform } from '../types/notification';
 
 const ENABLED_KEY = 'push_notifications_enabled';
@@ -47,12 +48,14 @@ type NotificationResponse = {
 
 let handlersInstalled = false;
 let responseSubscription: Notifications.EventSubscription | null = null;
+let receivedSubscription: Notifications.EventSubscription | null = null;
 let tapHandler: ((payload: PushPayload) => void) | null = null;
 
 /** Test-only: forget installed handlers/subscriptions. */
 export function __resetPushStateForTests(): void {
   handlersInstalled = false;
   responseSubscription = null;
+  receivedSubscription = null;
   tapHandler = null;
 }
 
@@ -72,6 +75,22 @@ export function extractPushPayload(input: unknown): PushPayload {
 /** True when this OS build can actually deliver push. */
 export function isPushAvailable(): boolean {
   return Boolean(Notifications) && typeof Notifications.getExpoPushTokenAsync === 'function';
+}
+
+/**
+ * #791 — the in-app line shown for a push that arrives while the app is already
+ * open. The foreground handler suppresses the OS banner on purpose, so without
+ * this the notification produced no user-facing feedback at all.
+ */
+export function foregroundPushMessage(notification: unknown): string {
+  const content = (notification as {
+    request?: { content?: { title?: string; body?: string } };
+  } | null)?.request?.content;
+
+  const title = content?.title?.trim();
+  const body = content?.body?.trim();
+  if (title && body) return `${title} — ${body}`;
+  return title || body || 'New escrow activity';
 }
 
 function currentPlatform(): PushPlatform {
@@ -125,12 +144,27 @@ export function configurePushNotifications(options?: {
       tapHandler?.(payload);
     },
   );
+
+  // #791 — `addNotificationResponseReceivedListener` only fires for taps while
+  // the app is running, and the handler above suppresses the OS banner, so a push
+  // received in the foreground used to be dropped silently. Surface it in-app.
+  receivedSubscription = Notifications.addNotificationReceivedListener(
+    (notification) => {
+      try {
+        showToast({ message: foregroundPushMessage(notification), type: 'info' });
+      } catch {
+        // The Toast provider is not mounted yet on a very early cold start.
+      }
+    },
+  );
 }
 
 /** Stop listening for taps (used on unmount and in tests). */
 export function teardownPushNotifications(): void {
   responseSubscription?.remove();
   responseSubscription = null;
+  receivedSubscription?.remove();
+  receivedSubscription = null;
   tapHandler = null;
   handlersInstalled = false;
 }
