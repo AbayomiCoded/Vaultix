@@ -4963,6 +4963,34 @@ fn test_list_escrows_page_size_limit() {
 }
 
 #[test]
+fn test_list_escrows_huge_page_returns_overflow_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let depositor = Address::generate(&env);
+
+    // page * page_size overflows u32
+    let result =
+        client.try_list_escrows_by_party(&depositor, &symbol_short!("depositor"), &u32::MAX, &2u32);
+    assert_eq!(result, Err(Ok(Error::ArithmeticOverflow)));
+
+    // page * page_size fits, but start_idx + page_size overflows u32
+    let result = client.try_list_escrows_by_party(
+        &depositor,
+        &symbol_short!("depositor"),
+        &(u32::MAX / 100),
+        &100u32,
+    );
+    assert_eq!(result, Err(Ok(Error::ArithmeticOverflow)));
+}
+
+#[test]
 fn test_list_escrows_invalid_role() {
     let env = Env::default();
     env.mock_all_auths();
@@ -5775,5 +5803,67 @@ fn assert_canonical_event_topics(
         found,
         "Event {} must be emitted with canonical topic format (Vaultix, v1, {})",
         expected_name, expected_name
+    );
+}
+
+/// Issue #745: a routine mutation on an escrow already at the current storage
+/// version must not rewrite the version marker.
+#[test]
+fn test_release_on_current_version_escrow_skips_version_marker_write() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &20_000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 6000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Phase1"),
+        },
+        Milestone {
+            amount: 4000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Phase2"),
+        },
+    ];
+    for escrow_id in [1u64, 2u64] {
+        client.create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &(env.ledger().timestamp() + 3600),
+            &valid_metadata_hash(&env),
+        );
+        token_client.approve(&depositor, &contract_id, &10_000, &200);
+        client.deposit_funds(&escrow_id);
+    }
+
+    // Escrow 1 is already at the current version: no marker write expected.
+    client.release_milestone(&1u64, &0);
+    let current_writes = env.cost_estimate().resources().write_entries;
+
+    // Escrow 2 has no marker, so this release must write it exactly once.
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .remove(&get_escrow_version_key(2u64));
+    });
+    client.release_milestone(&2u64, &0);
+    let marker_writes = env.cost_estimate().resources().write_entries;
+
+    assert_eq!(marker_writes, current_writes + 1);
+    assert_eq!(
+        client.test_get_escrow_version(&2u64),
+        ESCROW_ENTRY_STORAGE_VERSION
     );
 }
