@@ -435,7 +435,8 @@ pub enum Error {
     InvalidAdminProposal = 35,
     ContractNotInitialized = 36,
     InvalidSignerConfiguration = 37,
-    ReentrantCall = 38,
+    ArithmeticOverflow = 38,
+    ReentrantCall = 39,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
@@ -1591,8 +1592,16 @@ impl VaultixEscrow {
         let total = party_index_total(&env, index_role, &party);
 
         // Calculate pagination bounds
-        let start_idx = page.saturating_mul(page_size);
-        let end_idx = core::cmp::min(start_idx.saturating_add(page_size), total);
+        // Checked: `page` is caller-controlled and unbounded.
+        let start_idx = page
+            .checked_mul(page_size)
+            .ok_or(Error::ArithmeticOverflow)?;
+        let end_idx = core::cmp::min(
+            start_idx
+                .checked_add(page_size)
+                .ok_or(Error::ArithmeticOverflow)?,
+            total,
+        );
 
         if start_idx >= total {
             // Page is out of bounds, return empty result
@@ -2046,7 +2055,8 @@ impl VaultixEscrow {
                     &escrow.token_address,
                     escrow_fee_override_opt(&escrow),
                 )?;
-                fee_amount = calculate_fee(escrow.total_amount, fee_bps)?;
+                fee_amount =
+                    calculate_incremental_fee(escrow.total_released, escrow.total_amount, fee_bps)?;
                 fee_treasury = Some(treasury);
                 escrow
                     .total_amount
@@ -2182,8 +2192,10 @@ impl VaultixEscrow {
             escrow_fee_override_opt(&escrow),
         )?;
 
-        // Calculate platform fee using checked arithmetic
-        let platform_fee = calculate_fee(remaining_balance, fee_bps)?;
+        // Fee on the escrow-total basis: releases already paid fee(total_released),
+        // so the refund pays the rest, making the total fee equal fee(total_amount).
+        let platform_fee =
+            calculate_incremental_fee(escrow.total_released, remaining_balance, fee_bps)?;
 
         // Calculate refund amount
         let refund_amount = remaining_balance
@@ -2585,7 +2597,7 @@ fn release_pending_milestone(
         &escrow.token_address,
         escrow_fee_override_opt(escrow),
     )?;
-    let fee_amount = calculate_fee(milestone.amount, fee_bps)?;
+    let fee_amount = calculate_incremental_fee(escrow.total_released, milestone.amount, fee_bps)?;
     let payout_amount = milestone
         .amount
         .checked_sub(fee_amount)
@@ -2801,6 +2813,32 @@ fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
     Ok(fee)
 }
 
+/// Fee owed when `amount` moves out of an escrow that has already settled
+/// `settled_before` units of its total.
+///
+/// Fee basis: the platform fee is defined once against the escrow total, i.e.
+/// `calculate_fee(total_amount, fee_bps)`. Each settlement (milestone release,
+/// cancel, expired refund) charges the cumulative difference
+/// `fee(settled_before + amount) - fee(settled_before)`, so the fees collected
+/// over any sequence of settlements telescope to exactly `fee(total_amount)`
+/// (at constant `fee_bps`). Splitting a project into more, smaller milestones
+/// therefore cannot reduce the total fee via floor rounding.
+///
+/// With `fee_bps` in `0..=BPS_DENOMINATOR` the result is in `0..=amount`, so
+/// payouts never go negative.
+fn calculate_incremental_fee(
+    settled_before: i128,
+    amount: i128,
+    fee_bps: i128,
+) -> Result<i128, Error> {
+    let settled_after = settled_before
+        .checked_add(amount)
+        .ok_or(Error::InvalidMilestoneAmount)?;
+    calculate_fee(settled_after, fee_bps)?
+        .checked_sub(calculate_fee(settled_before, fee_bps)?)
+        .ok_or(Error::InvalidMilestoneAmount)
+}
+
 fn get_operator_internal(env: &Env) -> Result<Address, Error> {
     if let Some(op) = env
         .storage()
@@ -2962,8 +3000,22 @@ fn store_escrow_entry_v2(env: &Env, escrow_id: u64, escrow: &EscrowEntryV2) -> R
     validate_escrow_invariants(escrow)?;
     let key = get_storage_key_v2(escrow_id);
     env.storage().persistent().set(&key, escrow);
-    set_escrow_entry_version(env, escrow_id, ESCROW_ENTRY_STORAGE_VERSION);
     extend_escrow_ttl(env, &key, escrow);
+
+    // The version marker only changes on creation or migration; skip the
+    // redundant write (and its TTL bump) once it is already current.
+    let version_key = get_escrow_version_key(escrow_id);
+    let stored_version = env
+        .storage()
+        .persistent()
+        .get::<(Symbol, u64), i128>(&version_key);
+    if stored_version != Some(ESCROW_ENTRY_STORAGE_VERSION) {
+        env.storage()
+            .persistent()
+            .set(&version_key, &ESCROW_ENTRY_STORAGE_VERSION);
+        // Written together with the main entry, so keep both TTLs in sync.
+        extend_escrow_ttl(env, &version_key, escrow);
+    }
     Ok(())
 }
 

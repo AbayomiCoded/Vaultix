@@ -131,4 +131,66 @@ describe('useEscrowDetailCache', () => {
 
     expect(result.current.loading).toBe(false);
   });
+
+  it('ignores a stale response when escrowId changes before the first fetch resolves', async () => {
+    let resolveA!: (v: unknown) => void;
+    const slowA = new Promise((resolve) => { resolveA = resolve; });
+    const dataA = { id: 'escrow-A' };
+    const dataB = { id: 'escrow-B' };
+
+    const fetcher = jest.fn((id: string) =>
+      id === 'escrow-A' ? slowA : Promise.resolve(dataB)
+    );
+
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) => useEscrowDetailCache(id, () => fetcher(id)),
+      { initialProps: { id: 'escrow-A' } }
+    );
+
+    // Navigate to B while A is still in flight; B resolves first.
+    rerender({ id: 'escrow-B' });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual(dataB);
+
+    // A resolves late and must not overwrite B.
+    await act(async () => {
+      resolveA(dataA);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual(dataB);
+    expect(result.current.loading).toBe(false);
+    expect(escrowCache.cacheEscrowDetail).not.toHaveBeenCalledWith('escrow-A', dataA);
+  });
+
+  it('does not update state after unmount mid-fetch', async () => {
+    let resolveFetch!: (v: unknown) => void;
+    const pending = new Promise((resolve) => { resolveFetch = resolve; });
+    const fetcher = jest.fn(() => pending);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { unmount } = renderHook(() => useEscrowDetailCache('escrow-unmount', fetcher));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    unmount();
+
+    await act(async () => {
+      resolveFetch({ id: 'escrow-unmount' });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(escrowCache.cacheEscrowDetail).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
 });
